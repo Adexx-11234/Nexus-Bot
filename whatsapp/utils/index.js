@@ -1,0 +1,1 @@
+export { handlePairing } from './pairing.js'
