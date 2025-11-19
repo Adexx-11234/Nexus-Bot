@@ -1,6 +1,6 @@
 import express from 'express'
-import path from 'path'
-import { fileURLToPath } from 'url'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import authRoutes from './routes/auth.js'
 import sessionRoutes from './routes/session.js'
 import apiRoutes from './routes/api.js'

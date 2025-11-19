@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import crypto from 'node:crypto'
 import { createComponentLogger } from '../../utils/logger.js'
 import { MongoDBStorage } from './mongodb.js'
 import { PostgreSQLStorage } from './postgres.js'
