@@ -29,8 +29,8 @@ export class SessionManager {
     this.voluntarilyDisconnected = new Set()
 
     // Configuration
-    this.maxSessions = 50
-    this.concurrencyLimit = 5
+    this.maxSessions = 100
+    this.concurrencyLimit = 20
     this.isInitialized = false
 
     logger.info('Web session manager created (connections only)')
@@ -723,4 +723,5 @@ export function getSessionManager() {
  */
 export function resetSessionManager() {
   sessionManagerInstance = null
+
 }
