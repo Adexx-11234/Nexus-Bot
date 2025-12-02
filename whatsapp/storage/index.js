@@ -6,7 +6,7 @@ export {
   useMongoDBAuthState, 
   cleanupSessionAuthData, 
   hasValidAuthData 
-} from './authState.js'
+} from './auth-state.js'
 
 // Re-export storage utilities
 export { 
