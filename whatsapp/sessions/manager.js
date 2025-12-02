@@ -1,18 +1,14 @@
 import { createComponentLogger } from '../../utils/logger.js'
 import { SessionState } from './state.js'
-import { Boom } from '@hapi/boom'
 
 const logger = createComponentLogger('WEB_SESSION_MANAGER')
-// Prevent socket cleanup on handoff
-const HANDOFF_SESSIONS = new Set()
 
 /**
  * SessionManager for Web Server - Handles ONLY connections, NO event handlers
- * Event handlers will be set up by the main server after detection
+ * Creates connections and hands them off to main server for event handling
  */
 export class SessionManager {
   constructor(sessionDir = './sessions') {
-    // Core dependencies
     this.sessionDir = sessionDir
 
     // Component instances (lazy loaded)
@@ -27,11 +23,13 @@ export class SessionManager {
     // Session flags
     this.initializingSessions = new Set()
     this.voluntarilyDisconnected = new Set()
+    this.handoffComplete = new Set() // Track sessions handed off to main server
 
     // Configuration
-    this.maxSessions = 50
-    this.concurrencyLimit = 5
+    this.maxSessions = 300
+    this.concurrencyLimit = 20
     this.isInitialized = false
+    this.handoffTimeout = 15000 // 15 seconds for main server detection
 
     logger.info('Web session manager created (connections only)')
   }
@@ -43,13 +41,8 @@ export class SessionManager {
     try {
       logger.info('Initializing web session manager...')
 
-      // Initialize storage
       await this._initializeStorage()
-
-      // Initialize connection manager
       await this._initializeConnectionManager()
-
-      // Wait for MongoDB connection
       await this._waitForMongoDB()
 
       logger.info('Web session manager initialization complete')
@@ -98,7 +91,6 @@ export class SessionManager {
     
     while (Date.now() - startTime < maxWaitTime) {
       if (this.storage.isMongoConnected && this.storage.sessions) {
-        // Update connection manager with mongo client
         this.connectionManager.mongoClient = this.storage.client
         return true
       }
@@ -111,6 +103,7 @@ export class SessionManager {
 
   /**
    * Create a new session (CONNECTIONS ONLY - NO EVENT HANDLERS)
+   * Creates connection, waits for pairing, then hands off to main server
    */
   async createSession(
     userId,
@@ -130,6 +123,12 @@ export class SessionManager {
         return this.activeSockets.get(sessionId)
       }
 
+      // Check if already handed off
+      if (this.handoffComplete.has(sessionId)) {
+        logger.info(`Session ${sessionId} already handed off to main server`)
+        return null
+      }
+
       // Only return existing session if it's actually connected
       if (this.activeSockets.has(sessionId) && !isReconnect) {
         const existingSocket = this.activeSockets.get(sessionId)
@@ -139,9 +138,10 @@ export class SessionManager {
           logger.info(`Session ${sessionId} already exists and is connected`)
           return existingSocket
         } else {
-          logger.warn(`Session ${sessionId} exists but not connected - allowing recreate`)
-          // Clean up the disconnected session
-          await this._cleanupExistingSession(sessionId)
+          logger.warn(`Session ${sessionId} exists but not connected - cleaning up`)
+          await this._cleanupSocketOnly(sessionId, existingSocket)
+          this.activeSockets.delete(sessionId)
+          this.sessionState.delete(sessionId)
         }
       }
 
@@ -153,23 +153,18 @@ export class SessionManager {
       this.initializingSessions.add(sessionId)
       logger.info(`Creating web session ${sessionId} (source: ${source})`)
 
-      // Cleanup existing session if reconnecting
-      if (isReconnect) {
-        await this._cleanupExistingSession(sessionId)
-      } else if (allowPairing) {
-        // Check if there's stale auth that needs cleanup
-        const existingSocket = this.activeSockets.has(sessionId)
+      // Cleanup stale auth if new pairing
+      if (!isReconnect && allowPairing) {
         const authAvailability = await this.connectionManager.checkAuthAvailability(sessionId)
         
-        // Only cleanup if there's BOTH old auth AND no active socket (stale session)
-        if (authAvailability.preferred !== 'none' && !existingSocket) {
+        if (authAvailability.preferred !== 'none') {
           logger.info(`Cleaning up stale auth for new pairing: ${sessionId}`)
           await this.performCompleteUserCleanup(sessionId)
           await new Promise(resolve => setTimeout(resolve, 1000))
         }
       }
 
-      // Create socket connection
+      // Create socket connection with store
       const sock = await this.connectionManager.createConnection(
         sessionId,
         phoneNumber,
@@ -194,10 +189,10 @@ export class SessionManager {
         callbacks: callbacks
       })
 
-      // Setup BASIC connection handler (no event handlers)
-      this._setupBasicConnectionHandler(sock, sessionId, callbacks)
+      // Setup basic connection handler (waits for pairing, then hands off)
+      this._setupConnectionHandler(sock, sessionId, callbacks)
 
-      // Save to database
+      // Save to database - mark as NOT detected yet
       await this.storage.saveSession(sessionId, {
         userId: userIdStr,
         telegramId: userIdStr,
@@ -206,10 +201,10 @@ export class SessionManager {
         connectionStatus: 'connecting',
         reconnectAttempts: 0,
         source: source,
-        detected: false // Will be set to true by main server
+        detected: false // Main server will detect and take over
       })
 
-      logger.info(`Web session ${sessionId} created successfully (awaiting detection by main server)`)
+      logger.info(`Web session ${sessionId} created - awaiting connection`)
       return sock
 
     } catch (error) {
@@ -220,193 +215,172 @@ export class SessionManager {
     }
   }
 
-/**
- * Setup basic connection handler (NO EVENT HANDLERS)
- * FIXED: Proper 401 logout handling
- * @private
- */
-_setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
-  // Track reconnection after 515
-  let awaitingReconnection = false
-  
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update
+  /**
+   * Setup connection handler - Hands off to main server after pairing
+   * @private
+   */
+  _setupConnectionHandler(sock, sessionId, callbacks = {}) {
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect } = update
 
-    if (connection === 'open') {
-      logger.info(`Web session ${sessionId} connected - keeping socket alive for main server`)
-      
-      // Mark for handoff
-      HANDOFF_SESSIONS.add(sessionId)
-      
-      // Update database - mark as connected
-      await this.storage.updateSession(sessionId, {
-        isConnected: true,
-        connectionStatus: 'connected',
-        phoneNumber: sock.user?.id?.split('@')[0] || null,
-        detected: false // Main server will detect it
-      })
-
-      // Update session state
-      this.sessionState.update(sessionId, {
-        isConnected: true,
-        connectionStatus: 'connected'
-      })
-
-      // Call onConnected callback if provided
-      if (callbacks.onConnected) {
-        callbacks.onConnected()
-      }
-
-      // Keep socket alive for main server detection (increased delay)
-      setTimeout(() => {
-        this.activeSockets.delete(sessionId)
-        this.sessionState.delete(sessionId)
-        logger.info(`Web session ${sessionId} handed off to main server (socket still active)`)
-      }, 10000) // 10 seconds for main server to detect
-
-    } else if (connection === 'close') {
-      // Skip handling if session is being handed off
-      if (HANDOFF_SESSIONS.has(sessionId)) {
-        logger.info(`Web session ${sessionId} close event ignored - already handed off to main server`)
-        HANDOFF_SESSIONS.delete(sessionId)
-        return
-      }
-
-      const statusCode = lastDisconnect?.error?.output?.statusCode
-      const reason = lastDisconnect?.error?.output?.payload?.message || 'Unknown'
-      const errorData = lastDisconnect?.error?.data
-
-      logger.info(`Web session ${sessionId} closed: ${reason} (${statusCode})`)
-
-      // ===== CRITICAL: Handle 401 (Logout/Unauthorized) =====
-      if (statusCode === 401) {
-        logger.warn(`Web session ${sessionId} logged out (401) - cleaning up auth state`)
+      if (connection === 'open') {
+        logger.info(`✅ Web session ${sessionId} paired successfully - preparing handoff to main server`)
         
-        // Update database - mark as disconnected
+        // Update database - mark as connected but NOT detected
         await this.storage.updateSession(sessionId, {
-          isConnected: false,
-          connectionStatus: 'disconnected'
-        })
-
-        // Cleanup auth state completely
-        try {
-          await this.connectionManager.cleanupAuthState(sessionId)
-          logger.info(`Auth state cleaned up for ${sessionId}`)
-        } catch (cleanupError) {
-          logger.error(`Failed to cleanup auth for ${sessionId}:`, cleanupError)
-        }
-
-        // Cleanup local tracking
-        this.activeSockets.delete(sessionId)
-        this.sessionState.delete(sessionId)
-
-        // Call onError callback
-        if (callbacks.onError) {
-          callbacks.onError(lastDisconnect?.error)
-        }
-
-        // DO NOT attempt reconnection for 401
-        logger.info(`Session ${sessionId} requires new pairing after logout`)
-        return
-      }
-
-      // ===== Handle 515 (Restart Required) - Normal after pairing =====
-      if (statusCode === 515) {
-        logger.info(`Web session ${sessionId} restart required after pairing - reconnecting...`)
-        
-        // Mark as awaiting reconnection
-        awaitingReconnection = true
-        
-        // Update database - mark as reconnecting (not disconnected!)
-        await this.storage.updateSession(sessionId, {
-          isConnected: false,
-          connectionStatus: 'reconnecting'
+          isConnected: true,
+          connectionStatus: 'connected',
+          phoneNumber: sock.user?.id?.split('@')[0] || null,
+          detected: false // Main server will detect it
         })
 
         // Update session state
         this.sessionState.update(sessionId, {
-          connectionStatus: 'reconnecting'
+          isConnected: true,
+          connectionStatus: 'connected'
         })
 
-        // Call onError callback but don't cleanup
-        if (callbacks.onError) {
-          callbacks.onError(lastDisconnect?.error)
+        // Call onConnected callback
+        if (callbacks.onConnected) {
+          callbacks.onConnected()
         }
 
-        // Wait 3 seconds then reconnect
+        // Schedule handoff to main server
+        logger.info(`Scheduling handoff for ${sessionId} in ${this.handoffTimeout}ms`)
         setTimeout(async () => {
-          try {
-            logger.info(`Reconnecting ${sessionId} after 515...`)
-            
-            // Get the phone number from storage
-            const session = await this.storage.getSession(sessionId)
-            if (!session?.phoneNumber) {
-              logger.error(`No phone number found for ${sessionId} reconnection`)
-              
-              // Mark as failed
-              await this.storage.updateSession(sessionId, {
-                isConnected: false,
-                connectionStatus: 'disconnected'
-              })
-              return
-            }
+          await this._handoffToMainServer(sessionId, sock)
+        }, this.handoffTimeout)
 
-            // Create new connection (reconnect without pairing)
-            const newSock = await this.connectionManager.createConnection(
-              sessionId,
-              session.phoneNumber,
-              callbacks,
-              false // Don't allow pairing
-            )
+      } else if (connection === 'close') {
+        // Check if already handed off - ignore close events after handoff
+        if (this.handoffComplete.has(sessionId)) {
+          logger.debug(`Session ${sessionId} close ignored - already handed off to main server`)
+          return
+        }
 
-            if (newSock) {
-              // Replace the old socket
-              this.activeSockets.set(sessionId, newSock)
-              newSock.connectionCallbacks = callbacks
-              
-              // Setup connection handler for the new socket
-              this._setupBasicConnectionHandler(newSock, sessionId, callbacks)
-              
-              logger.info(`Reconnection initiated for ${sessionId}`)
-            } else {
-              logger.error(`Failed to create reconnection socket for ${sessionId}`)
-              
-              // Mark as failed
-              await this.storage.updateSession(sessionId, {
-                isConnected: false,
-                connectionStatus: 'disconnected'
-              })
-            }
-          } catch (error) {
-            logger.error(`Reconnection error for ${sessionId}:`, error)
-            
-            await this.storage.updateSession(sessionId, {
-              isConnected: false,
-              connectionStatus: 'disconnected'
-            })
+        const statusCode = lastDisconnect?.error?.output?.statusCode
+        const reason = lastDisconnect?.error?.output?.payload?.message || 'Unknown'
+
+        logger.info(`Web session ${sessionId} closed: ${reason} (${statusCode})`)
+
+        // Handle 401 (Logout) - Complete cleanup
+        if (statusCode === 401) {
+          logger.warn(`Web session ${sessionId} logged out (401) - cleaning up`)
+          
+          await this.storage.updateSession(sessionId, {
+            isConnected: false,
+            connectionStatus: 'disconnected'
+          })
+
+          await this.connectionManager.cleanupAuthState(sessionId)
+          await this._cleanupSocketOnly(sessionId, sock)
+          
+          this.activeSockets.delete(sessionId)
+          this.sessionState.delete(sessionId)
+
+          if (callbacks.onError) {
+            callbacks.onError(lastDisconnect?.error)
           }
-        }, 3000) // Wait 3 seconds before reconnecting
 
-        return
-      }
+          logger.info(`Session ${sessionId} requires new pairing after logout`)
+          return
+        }
 
-      // ===== Handle 428 (Connection Replaced) =====
-      if (statusCode === 428) {
-        logger.warn(`Web session ${sessionId} connection replaced - another device logged in`)
-        
+        // Handle 515 (Restart Required) - Normal after pairing
+        if (statusCode === 515) {
+          logger.info(`Web session ${sessionId} restart required (515) - reconnecting...`)
+          
+          await this.storage.updateSession(sessionId, {
+            isConnected: false,
+            connectionStatus: 'reconnecting',
+            detected: false
+          })
+
+          if (callbacks.onError) {
+            callbacks.onError(lastDisconnect?.error)
+          }
+
+          // Reconnect after 3 seconds
+          setTimeout(async () => {
+            try {
+              logger.info(`Reconnecting ${sessionId} after 515...`)
+              
+              const session = await this.storage.getSession(sessionId)
+              if (!session?.phoneNumber) {
+                logger.error(`No phone number found for ${sessionId}`)
+                
+                await this.storage.updateSession(sessionId, {
+                  isConnected: false,
+                  connectionStatus: 'disconnected'
+                })
+                return
+              }
+
+              // Create new connection without pairing
+              const newSock = await this.connectionManager.createConnection(
+                sessionId,
+                session.phoneNumber,
+                callbacks,
+                false
+              )
+
+              if (newSock) {
+                this.activeSockets.set(sessionId, newSock)
+                newSock.connectionCallbacks = callbacks
+                
+                this._setupConnectionHandler(newSock, sessionId, callbacks)
+                
+                logger.info(`Reconnection initiated for ${sessionId}`)
+              } else {
+                logger.error(`Failed to reconnect ${sessionId}`)
+                
+                await this.storage.updateSession(sessionId, {
+                  isConnected: false,
+                  connectionStatus: 'disconnected'
+                })
+              }
+            } catch (error) {
+              logger.error(`Reconnection error for ${sessionId}:`, error)
+              
+              await this.storage.updateSession(sessionId, {
+                isConnected: false,
+                connectionStatus: 'disconnected'
+              })
+            }
+          }, 3000)
+
+          return
+        }
+
+        // Handle 428 (Connection Replaced)
+        if (statusCode === 428) {
+          logger.warn(`Web session ${sessionId} connection replaced (428)`)
+          
+          await this.storage.updateSession(sessionId, {
+            isConnected: false,
+            connectionStatus: 'disconnected'
+          })
+
+          await this.connectionManager.cleanupAuthState(sessionId)
+          await this._cleanupSocketOnly(sessionId, sock)
+          
+          this.activeSockets.delete(sessionId)
+          this.sessionState.delete(sessionId)
+
+          if (callbacks.onError) {
+            callbacks.onError(lastDisconnect?.error)
+          }
+
+          return
+        }
+
+        // Handle other disconnects
         await this.storage.updateSession(sessionId, {
           isConnected: false,
           connectionStatus: 'disconnected'
         })
 
-        // Cleanup auth state
-        try {
-          await this.connectionManager.cleanupAuthState(sessionId)
-        } catch (cleanupError) {
-          logger.error(`Failed to cleanup auth for ${sessionId}:`, cleanupError)
-        }
-
-        // Cleanup local tracking
+        await this._cleanupSocketOnly(sessionId, sock)
         this.activeSockets.delete(sessionId)
         this.sessionState.delete(sessionId)
 
@@ -414,28 +388,80 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
           callbacks.onError(lastDisconnect?.error)
         }
 
+        logger.info(`Web session ${sessionId} disconnected (${statusCode})`)
+      }
+    })
+  }
+
+  /**
+   * Hand off session to main server - COMPLETE SOCKET CLEANUP
+   * Main server will create its own connection using existing auth
+   * @private
+   */
+  async _handoffToMainServer(sessionId, sock) {
+    try {
+      logger.info(`🤝 Handing off ${sessionId} to main server - closing web server socket`)
+
+      // Check if session is still connected
+      if (!sock || !sock.user || sock.readyState !== sock.ws?.OPEN) {
+        logger.warn(`Session ${sessionId} no longer connected - aborting handoff`)
         return
       }
 
-      // ===== Handle other disconnects =====
-      await this.storage.updateSession(sessionId, {
-        isConnected: false,
-        connectionStatus: 'disconnected'
-      })
+      // Mark handoff complete BEFORE cleanup to prevent close events from triggering
+      this.handoffComplete.add(sessionId)
 
-      // Cleanup local tracking
+      // ✅ COMPLETELY cleanup the socket on web server side
+      await this._cleanupSocketOnly(sessionId, sock)
+
+      // Remove from active tracking
       this.activeSockets.delete(sessionId)
       this.sessionState.delete(sessionId)
 
-      // Call onError callback if provided
-      if (callbacks.onError) {
-        callbacks.onError(lastDisconnect?.error)
+      // ✅ DO NOT touch database - main server will handle it
+      logger.info(`✅ Session ${sessionId} handed off - web server socket closed, auth preserved for main server`)
+
+    } catch (error) {
+      logger.error(`Handoff failed for ${sessionId}:`, error)
+      this.handoffComplete.delete(sessionId) // Allow retry on failure
+    }
+  }
+
+  /**
+   * Cleanup socket ONLY - Does NOT touch database or auth state
+   * Used during handoff to main server
+   * @private
+   */
+  async _cleanupSocketOnly(sessionId, sock) {
+    try {
+      logger.debug(`Cleaning up socket for ${sessionId} (preserving auth and database)`)
+
+      // Cleanup store
+      const { deleteSessionStore } = await import('../core/index.js')
+      deleteSessionStore(sessionId)
+
+      // Remove event listeners
+      if (sock.ev && typeof sock.ev.removeAllListeners === 'function') {
+        sock.ev.removeAllListeners()
       }
 
-      logger.info(`Web session ${sessionId} disconnected (${statusCode})`)
+      // Close WebSocket connection
+      if (sock.ws && sock.ws.readyState === sock.ws.OPEN) {
+        sock.ws.close(1000, 'Handoff to main server')
+      }
+
+      // Clear socket properties
+      sock.user = null
+      sock.connectionCallbacks = null
+
+      logger.debug(`Socket closed for ${sessionId} - auth and database preserved`)
+      return true
+
+    } catch (error) {
+      logger.error(`Failed to cleanup socket for ${sessionId}:`, error)
+      return false
     }
-  })
-}
+  }
 
   /**
    * Disconnect a session
@@ -444,26 +470,22 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
     try {
       logger.info(`Disconnecting web session ${sessionId} (force: ${forceCleanup})`)
 
-      // Full cleanup if forced
       if (forceCleanup) {
         return await this.performCompleteUserCleanup(sessionId)
       }
 
-      // Mark as voluntary disconnect
       this.initializingSessions.delete(sessionId)
       this.voluntarilyDisconnected.add(sessionId)
+      this.handoffComplete.delete(sessionId)
 
-      // Get and cleanup socket
       const sock = this.activeSockets.get(sessionId)
       if (sock) {
-        await this._cleanupSocket(sessionId, sock)
+        await this._cleanupSocketOnly(sessionId, sock)
       }
 
-      // Remove from tracking
       this.activeSockets.delete(sessionId)
       this.sessionState.delete(sessionId)
 
-      // Update database
       await this.storage.updateSession(sessionId, {
         isConnected: false,
         connectionStatus: 'disconnected'
@@ -479,36 +501,7 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
   }
 
   /**
-   * Cleanup socket
-   * @private
-   */
-  async _cleanupSocket(sessionId, sock) {
-    try {
-      // Remove event listeners
-      if (sock.ev && typeof sock.ev.removeAllListeners === 'function') {
-        sock.ev.removeAllListeners()
-      }
-
-      // Close WebSocket
-      if (sock.ws && sock.ws.readyState === sock.ws.OPEN) {
-        sock.ws.close(1000, 'Cleanup')
-      }
-
-      // Clear socket properties
-      sock.user = null
-      sock.connectionCallbacks = null
-
-      logger.debug(`Socket cleaned up for ${sessionId}`)
-      return true
-
-    } catch (error) {
-      logger.error(`Failed to cleanup socket for ${sessionId}:`, error)
-      return false
-    }
-  }
-
-  /**
-   * Perform complete user cleanup (logout)
+   * Perform complete user cleanup (logout) - Full cleanup including auth
    */
   async performCompleteUserCleanup(sessionId) {
     const results = { socket: false, database: false, authState: false }
@@ -516,22 +509,19 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
     try {
       logger.info(`Performing complete cleanup for web session ${sessionId}`)
 
-      // Cleanup socket
       const sock = this.activeSockets.get(sessionId)
       if (sock) {
-        results.socket = await this._cleanupSocket(sessionId, sock)
+        results.socket = await this._cleanupSocketOnly(sessionId, sock)
       }
 
-      // Clear in-memory structures
       this.activeSockets.delete(sessionId)
       this.sessionState.delete(sessionId)
       this.initializingSessions.delete(sessionId)
       this.voluntarilyDisconnected.add(sessionId)
+      this.handoffComplete.delete(sessionId)
 
-      // Delete from databases
       results.database = await this.storage.completelyDeleteSession(sessionId)
 
-      // Cleanup auth state
       const authCleanupResults = await this.connectionManager.cleanupAuthState(sessionId)
       results.authState = authCleanupResults.mongodb || authCleanupResults.file
 
@@ -541,23 +531,6 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
     } catch (error) {
       logger.error(`Complete cleanup failed for web session ${sessionId}:`, error)
       return results
-    }
-  }
-
-  /**
-   * Cleanup existing session before reconnect
-   * @private
-   */
-  async _cleanupExistingSession(sessionId) {
-    try {
-      const existingSession = await this.storage.getSession(sessionId)
-      
-      if (existingSession && !existingSession.isConnected) {
-        await this.disconnectSession(sessionId)
-      }
-
-    } catch (error) {
-      logger.error(`Failed to cleanup existing web session ${sessionId}:`, error)
     }
   }
 
@@ -584,7 +557,7 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
   }
 
   /**
-   * Check if session is really connected (socket + database)
+   * Check if session is really connected
    */
   async isReallyConnected(sessionId) {
     const sock = this.activeSockets.get(sessionId)
@@ -603,7 +576,8 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
     return {
       ...session,
       hasSocket,
-      stateInfo
+      stateInfo,
+      handedOff: this.handoffComplete.has(sessionId)
     }
   }
 
@@ -635,6 +609,7 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
         webSessions: webSessions.length,
         connectedWebSessions: connectedSessions.length,
         activeSockets: this.activeSockets.size,
+        handedOffSessions: this.handoffComplete.size,
         maxSessions: this.maxSessions,
         isInitialized: this.isInitialized,
         storage: this.storage?.isConnected ? 'Connected' : 'Disconnected',
@@ -658,7 +633,6 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
     try {
       logger.info('Shutting down web session manager...')
 
-      // Disconnect all sessions
       const disconnectPromises = []
       for (const sessionId of this.activeSockets.keys()) {
         disconnectPromises.push(this.disconnectSession(sessionId))
@@ -666,12 +640,10 @@ _setupBasicConnectionHandler(sock, sessionId, callbacks = {}) {
 
       await Promise.allSettled(disconnectPromises)
 
-      // Close storage
       if (this.storage) {
         await this.storage.close()
       }
 
-      // Cleanup connection manager
       if (this.connectionManager) {
         await this.connectionManager.cleanup()
       }

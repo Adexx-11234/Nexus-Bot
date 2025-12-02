@@ -1,10 +1,10 @@
 import { createComponentLogger } from '../../utils/logger.js'
 
-const logger = createComponentLogger('POSTGRES_STORAGE')
+const logger = createComponentLogger('WEB_POSTGRES_STORAGE')
 
 /**
- * PostgreSQLStorage - PostgreSQL storage implementation
- * Handles user sessions table operations
+ * PostgreSQL Storage for Web - SIMPLIFIED
+ * Only basic session operations
  */
 export class PostgreSQLStorage {
   constructor() {
@@ -22,17 +22,16 @@ export class PostgreSQLStorage {
       const { pool } = await import('../../config/database.js')
       this.pool = pool
 
-      // Test connection
       const client = await this.pool.connect()
       await client.query('SELECT 1 as test')
       client.release()
 
       this.isConnected = true
-      logger.info('PostgreSQL connected successfully')
+      logger.info('Web PostgreSQL connected successfully')
 
     } catch (error) {
       this.isConnected = false
-      logger.error('PostgreSQL connection failed:', error.message)
+      logger.error('Web PostgreSQL connection failed:', error.message)
     }
   }
 
@@ -63,11 +62,11 @@ export class PostgreSQLStorage {
         parseInt(sessionData.telegramId || sessionData.userId),
         sessionId,
         sessionData.phoneNumber,
-        this._ensureBoolean(sessionData.isConnected),
+        Boolean(sessionData.isConnected),
         sessionData.connectionStatus || 'disconnected',
         parseInt(sessionData.reconnectAttempts || 0),
-        sessionData.source || 'telegram',
-        this._ensureBoolean(sessionData.detected !== false)
+        sessionData.source || 'web',
+        Boolean(sessionData.detected !== false)
       ])
 
       return true
@@ -101,7 +100,7 @@ export class PostgreSQLStorage {
         isConnected: row.is_connected,
         connectionStatus: row.connection_status || 'disconnected',
         reconnectAttempts: row.reconnect_attempts || 0,
-        source: row.source || 'telegram',
+        source: row.source || 'web',
         detected: row.detected !== false,
         createdAt: row.created_at,
         updatedAt: row.updated_at
@@ -132,17 +131,13 @@ export class PostgreSQLStorage {
         setParts.push(`connection_status = $${paramIndex++}`)
         values.push(updates.connectionStatus)
       }
-      if (updates.phoneNumber) {
+      if (updates.phoneNumber !== undefined) {
         setParts.push(`phone_number = $${paramIndex++}`)
         values.push(updates.phoneNumber)
       }
       if (updates.reconnectAttempts !== undefined) {
         setParts.push(`reconnect_attempts = $${paramIndex++}`)
         values.push(updates.reconnectAttempts)
-      }
-      if (updates.source) {
-        setParts.push(`source = $${paramIndex++}`)
-        values.push(updates.source)
       }
       if (updates.detected !== undefined) {
         setParts.push(`detected = $${paramIndex++}`)
@@ -169,31 +164,7 @@ export class PostgreSQLStorage {
   }
 
   /**
-   * Delete session (soft delete - keeps user record)
-   */
-  async deleteSession(sessionId) {
-    if (!this.isConnected) return false
-
-    try {
-      const result = await this.pool.query(`
-        UPDATE users
-        SET session_id = NULL,
-            is_connected = false,
-            connection_status = 'disconnected',
-            updated_at = NOW()
-        WHERE session_id = $1
-      `, [sessionId])
-
-      return result.rowCount > 0
-
-    } catch (error) {
-      logger.error(`PostgreSQL delete error for ${sessionId}:`, error.message)
-      return false
-    }
-  }
-
-  /**
-   * Completely delete session (hard delete)
+   * Completely delete session
    */
   async completelyDeleteSession(sessionId) {
     if (!this.isConnected) return false
@@ -236,7 +207,7 @@ export class PostgreSQLStorage {
         isConnected: row.is_connected,
         connectionStatus: row.connection_status || 'disconnected',
         reconnectAttempts: row.reconnect_attempts || 0,
-        source: row.source || 'telegram',
+        source: row.source || 'web',
         detected: row.detected !== false,
         createdAt: row.created_at,
         updatedAt: row.updated_at
@@ -249,100 +220,6 @@ export class PostgreSQLStorage {
   }
 
   /**
-   * Get undetected web sessions
-   */
-  async getUndetectedWebSessions() {
-    if (!this.isConnected) return []
-
-    try {
-      const result = await this.pool.query(`
-        SELECT telegram_id, session_id, phone_number, is_connected,
-               connection_status, source, detected, updated_at
-        FROM users
-        WHERE source = 'web'
-          AND connection_status = 'connected'
-          AND is_connected = true
-          AND (detected IS NULL OR detected = false)
-          AND session_id IS NOT NULL
-        ORDER BY updated_at DESC
-      `)
-
-      return result.rows.map(row => ({
-        sessionId: row.session_id,
-        userId: row.telegram_id,
-        telegramId: row.telegram_id,
-        phoneNumber: row.phone_number,
-        isConnected: row.is_connected,
-        connectionStatus: row.connection_status,
-        source: row.source,
-        detected: row.detected || false,
-        updatedAt: row.updated_at
-      }))
-
-    } catch (error) {
-      logger.error('PostgreSQL get undetected web sessions error:', error.message)
-      return []
-    }
-  }
-
-  /**
-   * Get active sessions from database
-   */
-  async getActiveSessionsFromDatabase() {
-    if (!this.isConnected) return []
-
-    try {
-      const result = await this.pool.query(`
-        SELECT
-          COALESCE(session_id, 'session_' || telegram_id) as session_id,
-          telegram_id,
-          phone_number,
-          is_connected,
-          connection_status,
-          source,
-          detected
-        FROM users
-        WHERE telegram_id IS NOT NULL
-          AND is_active = true
-          AND (
-            session_id IS NOT NULL
-            OR phone_number IS NOT NULL
-            OR is_connected = true
-            OR connection_status IN ('connected', 'connecting')
-          )
-        ORDER BY updated_at DESC
-      `)
-
-      return result.rows.map(row => ({
-        sessionId: row.session_id,
-        userId: row.telegram_id,
-        telegramId: row.telegram_id,
-        phoneNumber: row.phone_number,
-        isConnected: row.is_connected,
-        connectionStatus: row.connection_status || 'disconnected',
-        source: row.source || 'telegram',
-        detected: row.detected !== false
-      }))
-
-    } catch (error) {
-      logger.error('PostgreSQL get active sessions error:', error.message)
-      return []
-    }
-  }
-
-  /**
-   * Ensure boolean value
-   * @private
-   */
-  _ensureBoolean(value) {
-    if (value === null || value === undefined) return false
-    if (typeof value === 'boolean') return value
-    if (typeof value === 'string') return value.toLowerCase() === 'true'
-    if (typeof value === 'number') return value !== 0
-    return Boolean(value)
-  }
-
-  /**
    * Close connection
    */
   async close() {
@@ -350,7 +227,7 @@ export class PostgreSQLStorage {
       if (this.pool && this.isConnected) {
         await this.pool.end()
         this.isConnected = false
-        logger.info('PostgreSQL connection closed')
+        logger.info('Web PostgreSQL connection closed')
       }
     } catch (error) {
       logger.error('PostgreSQL close error:', error.message)

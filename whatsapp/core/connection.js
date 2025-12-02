@@ -1,6 +1,7 @@
 import { createComponentLogger } from '../../utils/logger.js'
-import { createBaileysSocket } from './config.js'
-import { useMultiFileAuthState } from '@whiskeysockets/baileys'
+import { useMultiFileAuthState, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys'
+import pino from 'pino'
+
 const logger = createComponentLogger('CONNECTION_MANAGER')
 
 /**
@@ -33,46 +34,76 @@ export class ConnectionManager {
    * @param {boolean} allowPairing - Whether to allow pairing code generation
    * @returns {Promise<Object>} WhatsApp socket instance
    */
-  async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairing = true) {
-    try {
-      logger.info(`Creating connection for ${sessionId}`)
+async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairing = true) {
+  try {
+    logger.info(`Creating connection for ${sessionId}`)
 
-      // Get authentication state
-      const authState = await this._getAuthState(sessionId)
-      if (!authState) {
-        throw new Error('Failed to get authentication state')
-      }
-
-      // Create socket
-      const sock = createBaileysSocket(authState.state, {
-        // Additional config can be passed here
-      })
-
-      // Setup credentials update handler
-      sock.ev.on('creds.update', authState.saveCreds)
-
-      // Store socket metadata
-      sock.sessionId = sessionId
-      sock.authMethod = authState.method
-      sock.authCleanup = authState.cleanup
-      sock.connectionCallbacks = callbacks
-
-      // Track active socket
-      this.activeSockets.set(sessionId, sock)
-
-      // Handle pairing if needed
-      if (allowPairing && phoneNumber && !authState.state.creds?.registered) {
-        this._schedulePairing(sock, sessionId, phoneNumber, callbacks)
-      }
-
-      logger.info(`Socket created for ${sessionId} using ${authState.method} auth`)
-      return sock
-
-    } catch (error) {
-      logger.error(`Failed to create connection for ${sessionId}:`, error)
-      throw error
+    // Get authentication state
+    const authState = await this._getAuthState(sessionId)
+    if (!authState) {
+      throw new Error('Failed to get authentication state')
     }
+
+    // ✅ Create store BEFORE socket
+    const { createSessionStore, createBaileysSocket, bindStoreToSocket } = await import('./config.js')
+    const store = createSessionStore(sessionId)
+
+    // ✅ CRITICAL: Create getMessage BEFORE socket creation
+    const getMessage = async (key) => {
+      if (store) {
+        try {
+          const msg = await store.loadMessage(key.remoteJid, key.id)
+          return msg?.message || undefined
+        } catch (error) {
+          logger.debug(`getMessage failed for ${key.id}:`, error.message)
+          return undefined
+        }
+      }
+      return undefined
+    }
+
+    // ✅ Create socket WITH getMessage function
+    const sock = createBaileysSocket(authState.state, sessionId, getMessage)
+
+    // ✅ CRITICAL: Bind store to socket IMMEDIATELY and wait for initial sync
+    logger.info(`Binding store to socket for ${sessionId}`)
+    bindStoreToSocket(sock, sessionId)
+    
+    // ✅ IMPORTANT: Give the store a moment to start listening to events
+    // This ensures it catches all the initial sync data
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    logger.info(`Store bound and ready for ${sessionId}`)
+
+    // Setup credentials update handler
+    sock.ev.on('creds.update', authState.saveCreds)
+
+    // Store socket metadata
+    sock.sessionId = sessionId
+    sock.authMethod = authState.method
+    sock.authCleanup = authState.cleanup
+    sock.connectionCallbacks = callbacks
+    sock._sessionStore = store
+    sock._storeCleanup = () => {
+      if (authState.cleanup) authState.cleanup()
+    }
+
+    // Track active socket
+    this.activeSockets.set(sessionId, sock)
+
+    // Handle pairing if needed
+    if (allowPairing && phoneNumber && !authState.state.creds?.registered) {
+      this._schedulePairing(sock, sessionId, phoneNumber, callbacks)
+    }
+
+    logger.info(`Socket created for ${sessionId} using ${authState.method} auth`)
+    return sock
+
+  } catch (error) {
+    logger.error(`Failed to create connection for ${sessionId}:`, error)
+    throw error
   }
+}
 
   /**
    * Get authentication state (MongoDB or file-based)
@@ -83,7 +114,7 @@ export class ConnectionManager {
       // Try MongoDB first if available
       if (this.mongoClient) {
         try {
-            const { useMongoDBAuthState } = await import('../storage/index.js')
+          const { useMongoDBAuthState } = await import('../storage/index.js')
           const db = this.mongoClient.db()
           const collection = db.collection('auth_baileys')
           const mongoAuth = await useMongoDBAuthState(collection, sessionId)
@@ -91,8 +122,18 @@ export class ConnectionManager {
           // Validate MongoDB auth
           if (mongoAuth?.state?.creds?.noiseKey && mongoAuth.state.creds?.signedIdentityKey) {
             logger.info(`Using MongoDB auth for ${sessionId}`)
+            
+            // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
+            const authState = {
+              creds: mongoAuth.state.creds,
+              keys: makeCacheableSignalKeyStore(
+                mongoAuth.state.keys,
+                pino({ level: 'silent' })
+              )
+            }
+            
             return {
-              state: mongoAuth.state,
+              state: authState,
               saveCreds: mongoAuth.saveCreds,
               cleanup: mongoAuth.cleanup,
               method: 'mongodb'
@@ -117,8 +158,18 @@ export class ConnectionManager {
       // Validate file auth
       if (fileAuth?.state?.creds?.noiseKey && fileAuth.state.creds?.signedIdentityKey) {
         logger.info(`Using file auth for ${sessionId}`)
+        
+        // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
+        const authState = {
+          creds: fileAuth.state.creds,
+          keys: makeCacheableSignalKeyStore(
+            fileAuth.state.keys,
+            pino({ level: 'silent' })
+          )
+        }
+        
         return {
-          state: fileAuth.state,
+          state: authState,
           saveCreds: fileAuth.saveCreds,
           cleanup: () => {},
           method: 'file'
@@ -132,6 +183,7 @@ export class ConnectionManager {
       return null
     }
   }
+
 
   /**
    * Schedule pairing code generation
