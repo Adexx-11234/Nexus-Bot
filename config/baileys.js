@@ -1,5 +1,5 @@
 import NodeCache from "node-cache"
-import { jidNormalizedUser, makeInMemoryStore, makeWASocket } from "@whiskeysockets/baileys"
+import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers } from "@whiskeysockets/baileys"
 import { logger } from "../utils/logger.js"
 import pino from "pino"
 
