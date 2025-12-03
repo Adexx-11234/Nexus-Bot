@@ -25,9 +25,44 @@ const BufferJSON = {
   }
 }
 
+// Cache for auth data (5 minute TTL)
+const authCache = new Map()
+const writeQueue = new Map()
+
 /**
- * MongoDB auth state with SELECTIVE key storage - NO CACHING
- * Direct read/write operations
+ * Cleanup auth cache
+ * @private
+ */
+const cleanupCache = (sessionId = null) => {
+  if (sessionId) {
+    for (const [key] of authCache) {
+      if (key.startsWith(`${sessionId}:`)) {
+        authCache.delete(key)
+      }
+    }
+    for (const [key, timeout] of writeQueue) {
+      if (key.startsWith(`${sessionId}:`)) {
+        clearTimeout(timeout)
+        writeQueue.delete(key)
+      }
+    }
+  } else {
+    const now = Date.now()
+    const maxAge = 300000 // 5 minutes
+    for (const [key, data] of authCache) {
+      if (data.timestamp && (now - data.timestamp) > maxAge) {
+        authCache.delete(key)
+      }
+    }
+  }
+}
+
+// Periodic cache cleanup
+setInterval(() => cleanupCache(), 120000)
+
+/**
+ * Use MongoDB as authentication state storage
+ * Compatible with Baileys auth state interface
  */
 export const useMongoDBAuthState = async (collection, sessionId) => {
   if (!sessionId || !sessionId.startsWith('session_')) {
@@ -37,24 +72,23 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
   const fixFileName = (file) => file?.replace(/\//g, '__')?.replace(/:/g, '-') || ''
 
   /**
-   * ✅ CRITICAL KEYS ONLY - Ignore most keys to save RAM/disk
-   */
-  const isCriticalKey = (type) => {
-    // Only store these types
-    const criticalTypes = [
-      'creds',           // Authentication credentials
-      'session',         // Session data
-      'sender-key',      // Group encryption keys
-      'sender-key-memory' // Group encryption memory
-    ]
-    return criticalTypes.some(t => type.startsWith(t))
-  }
-
-  /**
-   * Read data from MongoDB - DIRECT READ, NO CACHE
+   * Read data from MongoDB with caching and retry logic
    */
   const readData = async (fileName) => {
-    const isCriticalFile = fileName === 'creds.json'
+    const cacheKey = `${sessionId}:${fileName}`
+
+    // Check cache (5 minute TTL)
+    if (authCache.has(cacheKey)) {
+      const cached = authCache.get(cacheKey)
+      if (cached.timestamp && (Date.now() - cached.timestamp) < 300000) {
+        return cached.data
+      } else {
+        authCache.delete(cacheKey)
+      }
+    }
+
+    // Retry logic for critical auth files
+    const isCriticalFile = fileName === 'creds.json' || fileName.includes('creds')
     const maxRetries = isCriticalFile ? 3 : 1
     let lastError = null
 
@@ -67,12 +101,17 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
 
         if (!result) {
           if (isCriticalFile && attempt === maxRetries) {
-            logger.error(`Auth read failed for ${sessionId}:${fileName}`)
+            logger.error(`Auth read failed for ${sessionId}:${fileName} after ${maxRetries} attempts`)
           }
           return null
         }
 
         const data = JSON.parse(result.datajson, BufferJSON.reviver)
+
+        if (data) {
+          authCache.set(cacheKey, { data, timestamp: Date.now() })
+        }
+
         return data
 
       } catch (error) {
@@ -80,7 +119,7 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
         if (attempt < maxRetries) {
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
         } else if (isCriticalFile) {
-          logger.error(`Auth read error for ${sessionId}:${fileName}:`, error.message)
+          logger.error(`Auth read error for ${sessionId}:${fileName} after ${maxRetries} attempts:`, error.message)
         }
       }
     }
@@ -89,29 +128,46 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
   }
 
   /**
-   * Write data to MongoDB - DIRECT WRITE, NO BUFFERING
+   * Write data to MongoDB with debouncing
    */
   const writeData = async (datajson, fileName) => {
-    try {
-      const query = { filename: fixFileName(fileName), sessionId: sessionId }
-      const update = {
-        $set: {
-          filename: fixFileName(fileName),
-          sessionId: sessionId,
-          datajson: JSON.stringify(datajson, BufferJSON.replacer),
-          updatedAt: new Date()
-        }
-      }
-      await collection.updateOne(query, update, { upsert: true })
-    } catch (error) {
-      logger.error(`Auth write error for ${sessionId}:${fileName}:`, error.message)
+    const cacheKey = `${sessionId}:${fileName}`
+    authCache.set(cacheKey, { data: datajson, timestamp: Date.now() })
+
+    const queueKey = `${sessionId}:${fileName}`
+    if (writeQueue.has(queueKey)) {
+      clearTimeout(writeQueue.get(queueKey))
     }
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const query = { filename: fixFileName(fileName), sessionId: sessionId }
+        const update = {
+          $set: {
+            filename: fixFileName(fileName),
+            sessionId: sessionId,
+            datajson: JSON.stringify(datajson, BufferJSON.replacer),
+            updatedAt: new Date()
+          }
+        }
+        await collection.updateOne(query, update, { upsert: true })
+      } catch (error) {
+        logger.error(`Auth write error for ${sessionId}:${fileName}:`, error.message)
+      } finally {
+        writeQueue.delete(queueKey)
+      }
+    }, 50)
+
+    writeQueue.set(queueKey, timeoutId)
   }
 
   /**
    * Remove data from MongoDB
    */
   const removeData = async (fileName) => {
+    const cacheKey = `${sessionId}:${fileName}`
+    authCache.delete(cacheKey)
+
     try {
       await collection.deleteOne({ filename: fixFileName(fileName), sessionId: sessionId })
     } catch (error) {
@@ -129,17 +185,9 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
     state: {
       creds,
       keys: {
-        /**
-         * ✅ OPTIMIZED: Get keys in batches, skip non-critical keys
-         */
         get: async (type, ids) => {
-          // ✅ Skip non-critical keys entirely
-          if (!isCriticalKey(type)) {
-            return {}
-          }
-
           const data = {}
-          const batchSize = 100
+          const batchSize = 10
 
           for (let i = 0; i < ids.length; i += batchSize) {
             const batch = ids.slice(i, i + batchSize)
@@ -151,25 +199,16 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
                 }
                 if (value) data[id] = value
               } catch (error) {
-                // Silent error for non-critical keys
+                // Silent error
               }
             })
             await Promise.allSettled(promises)
           }
           return data
         },
-        
-        /**
-         * ✅ OPTIMIZED: Set keys in batches, skip non-critical keys
-         */
         set: async (data) => {
           const tasks = []
           for (const category in data) {
-            // ✅ Skip non-critical keys entirely
-            if (!isCriticalKey(category)) {
-              continue
-            }
-
             for (const id in data[category]) {
               const value = data[category][id]
               const file = `${category}-${id}.json`
@@ -189,13 +228,17 @@ export const useMongoDBAuthState = async (collection, sessionId) => {
       }
     },
     saveCreds: () => writeData(creds, 'creds.json'),
-    cleanup: () => {} // No cache to cleanup
+    cleanup: () => cleanupCache(sessionId)
   }
 }
 
+/**
+ * Cleanup session auth data from MongoDB
+ */
 export const cleanupSessionAuthData = async (collection, sessionId) => {
   try {
     const result = await collection.deleteMany({ sessionId })
+    cleanupCache(sessionId)
     logger.info(`Cleaned up auth data for ${sessionId}: ${result.deletedCount} documents`)
     return true
   } catch (error) {
@@ -204,6 +247,9 @@ export const cleanupSessionAuthData = async (collection, sessionId) => {
   }
 }
 
+/**
+ * Check if session has valid auth data in MongoDB
+ */
 export const hasValidAuthData = async (collection, sessionId) => {
   const maxRetries = 3
 
@@ -216,7 +262,7 @@ export const hasValidAuthData = async (collection, sessionId) => {
 
       if (!creds) {
         if (attempt === maxRetries) {
-          logger.warn(`No auth credentials found for ${sessionId}`)
+          logger.warn(`No auth credentials found for ${sessionId} after ${maxRetries} attempts`)
           return false
         }
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt))

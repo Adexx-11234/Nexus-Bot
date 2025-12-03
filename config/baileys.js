@@ -24,44 +24,23 @@ const defaultGetMessage = async (key) => {
   return undefined
 }
 
+
 export const baileysConfig = {
-  logger: baileysLogger,
+  logger: pino({ level: "silent" }),
   printQRInTerminal: false,
-  browser: ['Mac OS', 'safari', '5.1.10'],
+  msgRetryCounterMap: {},
+    browser: Browsers.windows('safari'),
+  retryRequestDelayMs: 250,
+  markOnlineOnConnect: false,
   getMessage: defaultGetMessage,  // Default fallback
-  
-  generateHighQualityLinkPreview: true,
-  
-  patchMessageBeforeSending: (message) => {
-    const requiresPatch = !!(
-      message.buttonsMessage || 
-      message.templateMessage ||
-      message.listMessage
-    )
-    
-    if (requiresPatch) {
-      message = {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: {
-              deviceListMetadataVersion: 2,
-              deviceListMetadata: {},
-            },
-            ...message,
-          },
+    version: [2, 3000, 1025190524],
+  emitOwnEvents: true,
+  patchMessageBeforeSending: (msg) => {
+      if (msg.contextInfo) delete msg.contextInfo.mentionedJid;
+          return msg;
         },
-      }
-    }
-    
-    return message
-  },
-  
-  connectTimeoutMs: 60000,
-  defaultQueryTimeoutMs: 0,
-  syncFullHistory: true,
-  keepAliveIntervalMs: 25000,
-  markOnlineOnConnect: true,
-  fireInitQueries: true
+  appStateSyncInitialTimeoutMs: 10000,
+  generateHighQualityLinkPreview: true
 }
 
 export const eventTypes = [
