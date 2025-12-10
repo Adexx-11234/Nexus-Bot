@@ -29,11 +29,9 @@ export const baileysConfig = {
   logger: pino({ level: "silent" }),
   printQRInTerminal: false,
   msgRetryCounterMap: {},
-    browser: Browsers.windows('safari'),
   retryRequestDelayMs: 250,
   markOnlineOnConnect: false,
   getMessage: defaultGetMessage,  // Default fallback
-    version: [2, 3000, 1025190524],
   emitOwnEvents: true,
   patchMessageBeforeSending: (msg) => {
       if (msg.contextInfo) delete msg.contextInfo.mentionedJid;
@@ -205,3 +203,4 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
