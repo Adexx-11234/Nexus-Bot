@@ -20,7 +20,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-   "@whiskeysockets/baileys": "npm:@rexxhayanasi/elaina-bail",
+   "@whiskeysockets/baileys": "npm:baileys-mod",
     "axios": "^1.7.7",
     "bcryptjs": "latest",
     "chalk": "^4.1.2",
