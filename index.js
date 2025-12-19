@@ -29,7 +29,7 @@ app.use(cookieParser())
 
 // Setup web interface routes
 //webInterface = new WebInterface()
-a//pp.use('/', webInterface.router)
+//app.use('/', webInterface.router)
 
 // Health endpoints
 app.get("/health", async (req, res) => {
