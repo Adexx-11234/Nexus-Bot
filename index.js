@@ -7,6 +7,14 @@ import cookieParser from 'cookie-parser'
 
 dotenv.config()
 
+// GUARD: Prevent multiple instances
+if (global.__APP_INSTANCE_RUNNING__) {
+  console.log('[GUARD] Application instance already running, exiting...')
+  process.exit(0)
+}
+global.__APP_INSTANCE_RUNNING__ = true
+
+
 const logger = createComponentLogger("WEB_SERVER")
 const PORT = process.env.WEB_PORT || 3000
 const app = express()
