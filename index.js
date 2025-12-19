@@ -28,8 +28,8 @@ app.use(express.static("public"))
 app.use(cookieParser())
 
 // Setup web interface routes
-webInterface = new WebInterface()
-app.use('/', webInterface.router)
+//webInterface = new WebInterface()
+a//pp.use('/', webInterface.router)
 
 // Health endpoints
 app.get("/health", async (req, res) => {
@@ -77,7 +77,10 @@ async function initializeWebServer() {
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
-
+    logger.info("Initializing web interface...")
+    webInterface = new WebInterface()
+    app.use('/', webInterface.router)
+    logger.info("Web interface routes configured")
 
     // 3. HTTP Server
     server = app.listen(PORT, () => {
