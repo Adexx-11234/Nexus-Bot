@@ -29,16 +29,23 @@ export const baileysConfig = {
   logger: pino({ level: "silent" }),
   printQRInTerminal: false,
   msgRetryCounterMap: {},
-  retryRequestDelayMs: 250,
+  retryRequestDelayMs: 350,
   markOnlineOnConnect: false,
-  getMessage: defaultGetMessage,  // Default fallback
+  getMessage: defaultGetMessage,
+  // version: [2, 3000, 1025190524], // remove comments if connection open but didn't connect on WhatsApp
   emitOwnEvents: true,
+  shouldIgnoreJid: (jid) => false,
+  // Remove mentionedJid to avoid issues
   patchMessageBeforeSending: (msg) => {
-      if (msg.contextInfo) delete msg.contextInfo.mentionedJid;
-          return msg;
-        },
+    if (msg.contextInfo) delete msg.contextInfo.mentionedJid;
+    return msg;
+  },
   appStateSyncInitialTimeoutMs: 10000,
-  generateHighQualityLinkPreview: true
+  generateHighQualityLinkPreview: true,
+  syncFullHistory: false,
+  defaultQueryTimeoutMs: 60000,
+  // Don't send ACKs to avoid potential bans
+  sendAcks: false,
 }
 
 export const eventTypes = [
@@ -146,9 +153,7 @@ export function createBaileysSocket(authState, sessionId, getMessage = null) {
   try {
     const sock = makeWASocket({
       ...baileysConfig,
-      auth: authState,
-      // ✅ CRITICAL: Use provided getMessage or fallback to default
-      getMessage: getMessage || defaultGetMessage
+      auth: authState
     })
     
     // Setup default socket properties
@@ -203,4 +208,5 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
 
