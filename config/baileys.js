@@ -1,5 +1,5 @@
 import NodeCache from "node-cache"
-import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers } from "@whiskeysockets/baileys"
+import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers, fetchLatestBaileysVersion } from "@whiskeysockets/baileys"
 import { logger } from "../utils/logger.js"
 import pino from "pino"
 
@@ -24,28 +24,18 @@ const defaultGetMessage = async (key) => {
   return undefined
 }
 
-
+const { version, isLatest } = await fetchLatestBaileysVersion();
 export const baileysConfig = {
-  logger: pino({ level: "silent" }),
+  version,
+  logger: pino({ level: "silent" }), // Shows EVERYTHING
   printQRInTerminal: false,
-  msgRetryCounterMap: {},
-  retryRequestDelayMs: 350,
-  markOnlineOnConnect: false,
+  browser: ['Ubuntu', 'Chrome', '20.0.0'],
   getMessage: defaultGetMessage,
   // version: [2, 3000, 1025190524], // remove comments if connection open but didn't connect on WhatsApp
-  emitOwnEvents: true,
-  shouldIgnoreJid: (jid) => false,
-  // Remove mentionedJid to avoid issues
-  patchMessageBeforeSending: (msg) => {
-    if (msg.contextInfo) delete msg.contextInfo.mentionedJid;
-    return msg;
-  },
-  appStateSyncInitialTimeoutMs: 10000,
   generateHighQualityLinkPreview: true,
   syncFullHistory: false,
-  defaultQueryTimeoutMs: 60000,
-  // Don't send ACKs to avoid potential bans
-  sendAcks: false,
+  defaultQueryTimeoutMs: undefined,
+  markOnlineOnConnect: true,
 }
 
 export const eventTypes = [
@@ -208,5 +198,6 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
 
 
