@@ -1,7 +1,13 @@
+import { createRequire } from 'module'
 import NodeCache from "node-cache"
 import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers, fetchLatestBaileysVersion, DEFAULT_CONNECTION_CONFIG } from "@whiskeysockets/baileys"
 import { logger } from "../utils/logger.js"
 import pino from "pino"
+
+// ✅ CRITICAL FIX: Make require available for Baileys internals
+// Baileys uses CommonJS internally, so we need to provide require in ES modules
+const require = createRequire(import.meta.url)
+globalThis.require = require
 
 // ==================== BAILEYS SILENT LOGGER ====================
 const baileysLogger = pino({ 
@@ -112,16 +118,22 @@ export function createSessionStore(sessionId) {
     return sessionStores.get(sessionId)
   }
   
-  const store = makeInMemoryStore({ 
-    logger: baileysLogger 
-  })
-  
-  // Store it for later retrieval
-  sessionStores.set(sessionId, store)
-  
-  logger.debug(`[Store] Created in-memory store for ${sessionId}`)
-  
-  return store
+  try {
+    const store = makeInMemoryStore({ 
+      logger: baileysLogger 
+    })
+    
+    // Store it for later retrieval
+    sessionStores.set(sessionId, store)
+    
+    logger.debug(`[Store] Created in-memory store for ${sessionId}`)
+    
+    return store
+  } catch (error) {
+    logger.error(`[Store] Failed to create store for ${sessionId}:`, error.message)
+    // Return null if store creation fails - socket will use default getMessage
+    return null
+  }
 }
 
 /**
@@ -153,15 +165,21 @@ export function bindStoreToSocket(sock, sessionId) {
     if (!store) {
       logger.warn(`[Store] No store found for ${sessionId}, creating new one`)
       const newStore = createSessionStore(sessionId)
-      newStore.bind(sock.ev)
       
-      // Set getMessage function
-      sock.getMessage = async (key) => {
-        if (newStore) {
-          const msg = await newStore.loadMessage(key.remoteJid, key.id)
-          return msg?.message || undefined
+      if (newStore) {
+        newStore.bind(sock.ev)
+        
+        // Set getMessage function
+        sock.getMessage = async (key) => {
+          if (newStore) {
+            const msg = await newStore.loadMessage(key.remoteJid, key.id)
+            return msg?.message || undefined
+          }
+          return undefined
         }
-        return undefined
+      } else {
+        // Fallback if store creation failed
+        sock.getMessage = defaultGetMessage
       }
       
       return newStore
@@ -184,6 +202,8 @@ export function bindStoreToSocket(sock, sessionId) {
     
   } catch (error) {
     logger.error(`[Store] Error binding store for ${sessionId}:`, error.message)
+    // Set default getMessage as fallback
+    sock.getMessage = defaultGetMessage
     return null
   }
 }
@@ -252,8 +272,3 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
-
-
-
-
-
