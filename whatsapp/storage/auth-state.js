@@ -250,7 +250,9 @@ export const cleanupSessionAuthData = async (collection, sessionId) => {
 /**
  * Check if session has valid auth data in MongoDB
  */
-async hasValidAuthData(collection, sessionId) {
+
+export const hasValidAuthData = async (collection, sessionId) => {
+    if (!collection) return false
 
     try {
       const creds = await collection.findOne({
@@ -268,4 +270,5 @@ async hasValidAuthData(collection, sessionId) {
       return false
     }
   }
+
 
