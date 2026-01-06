@@ -250,43 +250,22 @@ export const cleanupSessionAuthData = async (collection, sessionId) => {
 /**
  * Check if session has valid auth data in MongoDB
  */
-export const hasValidAuthData = async (collection, sessionId) => {
-  const maxRetries = 3
+async hasValidAuthData(collection, sessionId) {
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const creds = await collection.findOne({
-        filename: 'creds.json',
-        sessionId: sessionId
-      }, { projection: { datajson: 1 } })
+        sessionId,
+        filename: "creds.json",
+      })
 
-      if (!creds) {
-        if (attempt === maxRetries) {
-          logger.warn(`No auth credentials found for ${sessionId} after ${maxRetries} attempts`)
-          return false
-        }
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
-        continue
-      }
+      if (!creds?.datajson) return false
 
-      const credsData = JSON.parse(creds.datajson, BufferJSON.reviver)
-      const isValid = !!(credsData && credsData.noiseKey && credsData.signedIdentityKey)
+      const parsed = typeof creds.datajson === "string" ? JSON.parse(creds.datajson) : creds.datajson
 
-      if (!isValid && attempt === maxRetries) {
-        logger.error(`Invalid auth credentials structure for ${sessionId}`)
-      }
-
-      return isValid
-
+      return !!(parsed?.noiseKey && parsed?.signedIdentityKey)
     } catch (error) {
-      if (attempt === maxRetries) {
-        logger.error(`Auth validation error for ${sessionId}:`, error.message)
-        return false
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+      logger.debug(`Auth validation failed ${sessionId}: ${error.message}`)
+      return false
     }
   }
 
-  return false
-
-}
