@@ -45,16 +45,6 @@ export const baileysConfig = {
     // The filterered history types are handled by PROCESSABLE_HISTORY_TYPES
     return true
   },
- 
-  // ✅ CRITICAL FIX #3: Better logging for message processing
-  // Helps debug when messages stop arriving
-  logger: pino({
-    level: process.env.BAILEYS_LOG_LEVEL || "debug",
-    transport: process.env.BAILEYS_LOG_LEVEL === "silent" ? undefined : {
-      target: "pino-pretty",
-      options: { colorize: true, singleLine: false }
-    }
-  }),
   
   // ✅ CRITICAL FIX #4: Keep socket alive longer
   // Prevents timeout disconnections
@@ -262,6 +252,7 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
 
 
 
