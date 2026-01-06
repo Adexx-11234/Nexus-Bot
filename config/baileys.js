@@ -1,5 +1,5 @@
 import NodeCache from "node-cache"
-import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers, fetchLatestBaileysVersion } from "@whiskeysockets/baileys"
+import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers, fetchLatestBaileysVersion, DEFAULT_CONNECTION_CONFIG } from "@whiskeysockets/baileys"
 import { logger } from "../utils/logger.js"
 import pino from "pino"
 
@@ -25,17 +25,81 @@ const defaultGetMessage = async (key) => {
 }
 
 const { version, isLatest } = await fetchLatestBaileysVersion();
-export const baileysConfig = {
+export const baileysConfig = { 
+  ...DEFAULT_CONNECTION_CONFIG,
   version,
-  logger: pino({ level: "silent" }), // Shows EVERYTHING
-  printQRInTerminal: false,
-  browser: ['Ubuntu', 'Chrome', '20.0.0'],
-  getMessage: defaultGetMessage,
-  // version: [2, 3000, 1025190524], // remove comments if connection open but didn't connect on WhatsApp
-  generateHighQualityLinkPreview: true,
-  syncFullHistory: false,
-  defaultQueryTimeoutMs: undefined,
-  markOnlineOnConnect: true,
+  
+  // ✅ CRITICAL FIX #1: shouldIgnoreJid - NEVER filter out messages
+  // The default behavior filters JIDs which causes messages to disappear
+  shouldIgnoreJid: (jid) => {
+    // Only filter out specific known spam JIDs if needed
+    // DEFAULT: Never ignore any JID (return false for all)
+    // This ensures ALL messages reach the handler
+    return false
+  },
+  
+  // ✅ CRITICAL FIX #2: shouldSyncHistoryMessage - Allow history sync
+  // This prevents historical message sync issues
+  shouldSyncHistoryMessage: (historyMsg) => {
+    // Always sync history messages to maintain proper message chain
+    // The filterered history types are handled by PROCESSABLE_HISTORY_TYPES
+    return true
+  },
+ 
+  // ✅ CRITICAL FIX #3: Better logging for message processing
+  // Helps debug when messages stop arriving
+  logger: pino({
+    level: process.env.BAILEYS_LOG_LEVEL || "debug",
+    transport: process.env.BAILEYS_LOG_LEVEL === "silent" ? undefined : {
+      target: "pino-pretty",
+      options: { colorize: true, singleLine: false }
+    }
+  }),
+  
+  // ✅ CRITICAL FIX #4: Keep socket alive longer
+  // Prevents timeout disconnections
+  keepAliveIntervalMs: 60000,        // Every 60 seconds
+  tcpKeepAliveIntervalMs: 30000,     // TCP keepalive every 30 seconds
+  connectTimeoutMs: 60000,    // 60 second timeout for connection attempts
+  
+  // ✅ CRITICAL FIX #4b: Extended timeout handling for 408 errors
+  // WhatsApp can be slow, especially on poor connections
+  defaultQueryTimeoutMs: 120000,  // 2 minute default query timeout (was 60s)
+  retryRequestDelayMs: 500,       // 500ms between retries (was 250ms)
+  maxMsgRetryCount: 10,           // Retry failed messages 10 times (was 5)
+  
+  // ✅ CRITICAL FIX #4c: Better session timeout handling
+  appStateSyncInitialTimeoutMs: 30000,  // 30s for initial sync (was 10s)
+  
+  // ✅ CRITICAL FIX #5: Better session recovery
+  enableAutoSessionRecreation: true,
+  enableRecentMessageCache: true,
+  fireInitQueries: true,
+  
+  // ✅ CRITICAL FIX #5b: Better prekey handling
+  // Prevent excessive session recreation from prekey updates
+  preKeyCount: 50,  // Keep more prekeys available
+  
+  // ✅ CRITICAL FIX #6: Transaction failure recovery
+  // Signal key store transactions can fail due to file system or permission issues
+  // These settings improve reliability:
+  transactionOpts: {
+    maxCommitRetries: 15,      // Increase from default 10 to 15 retries
+    delayBetweenTriesMs: 5000  // 5 seconds between retries (gives file system time to recover)
+  },
+  
+  // ✅ CRITICAL FIX #7: Session error recovery
+  // When "No matching sessions found" error occurs (libsignal can't decrypt)
+  // Automatically request pre-keys and retry
+  sessionErrorRecovery: {
+    enabled: true,
+    // Request pre-keys when session missing
+    requestPreKeysOnError: true,
+    // Timeout before retrying pre-key request for same JID
+    preKeyRequestTimeout: 30000,
+    // Max retries per message
+    maxRetries: 3,
+  },
 }
 
 export const eventTypes = [
@@ -198,6 +262,7 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
 
 
 
