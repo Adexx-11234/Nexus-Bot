@@ -76,7 +76,7 @@ export class SessionManager {
     this.connectionManager = new ConnectionManager()
     this.connectionManager.initialize(
       this.fileManager,
-      this.storage.isMongoConnected ? this.storage.client : null
+      this.storage.isMongoConnected ? this.storage.client : null,
       this.storage.mongoStorage || null
     )
 
@@ -699,3 +699,4 @@ export function resetSessionManager() {
   sessionManagerInstance = null
 
 }
+
