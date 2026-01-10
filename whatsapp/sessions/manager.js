@@ -77,6 +77,7 @@ export class SessionManager {
     this.connectionManager.initialize(
       this.fileManager,
       this.storage.isMongoConnected ? this.storage.client : null
+      this.storage.mongoStorage || null
     )
 
     logger.info('Connection manager initialized')
@@ -92,6 +93,7 @@ export class SessionManager {
     while (Date.now() - startTime < maxWaitTime) {
       if (this.storage.isMongoConnected && this.storage.sessions) {
         this.connectionManager.mongoClient = this.storage.client
+        this.connectionManager.mongoStorage = this.storage.mongoStorage
         return true
       }
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -695,4 +697,5 @@ export function getSessionManager() {
  */
 export function resetSessionManager() {
   sessionManagerInstance = null
+
 }
