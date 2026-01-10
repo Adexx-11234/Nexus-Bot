@@ -21,7 +21,7 @@ export class ConnectionManager {
   /**
    * Initialize with dependencies
    */
-  initialize(fileManager, mongoClient = null) {
+  initialize(fileManager, mongoClient = null, mongoStorage = null) {
     this.fileManager = fileManager
     this.mongoClient = mongoClient
     this.mongoStorage = mongoStorage
@@ -223,38 +223,57 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
   }
 
   /**
-   * Check authentication availability across storage methods
-   */
-  async checkAuthAvailability(sessionId) {
+ * Check authentication availability across storage methods
+ */
+async checkAuthAvailability(sessionId) {
     const availability = {
       mongodb: false,
       file: false,
       preferred: 'none'
     }
 
-    // Check MongoDB auth
-    if (this.mongoClient) {
+    // ✅ Check MongoDB auth using mongoStorage first (preferred for web)
+    if (this.mongoStorage?.hasValidAuthData) {
+      try {
+        availability.mongodb = await this.mongoStorage.hasValidAuthData(sessionId)
+        logger.debug(`MongoDB auth check via mongoStorage: ${availability.mongodb}`)
+      } catch (error) {
+        logger.debug(`MongoDB auth check via mongoStorage failed: ${error.message}`)
+        availability.mongodb = false
+      }
+    } 
+    // Fallback to collection-based check
+    else if (this.mongoClient) {
       try {
         const { hasValidAuthData } = await import('../storage/index.js')
         const db = this.mongoClient.db()
         const collection = db.collection('auth_baileys')
         availability.mongodb = await hasValidAuthData(collection, sessionId)
+        logger.debug(`MongoDB auth check via collection: ${availability.mongodb}`)
       } catch (error) {
+        logger.debug(`MongoDB auth check via collection failed: ${error.message}`)
         availability.mongodb = false
       }
     }
 
     // Check file-based auth
     if (this.fileManager) {
-      availability.file = this.fileManager.hasValidCredentials(sessionId)
+      try {
+        availability.file = await this.fileManager.hasValidCredentials(sessionId)
+        logger.debug(`File auth check: ${availability.file}`)
+      } catch (error) {
+        logger.debug(`File auth check failed: ${error.message}`)
+        availability.file = false
+      }
     }
 
     // Determine preferred method
     availability.preferred = availability.mongodb ? 'mongodb' : 
                             availability.file ? 'file' : 'none'
 
+    logger.info(`Auth availability for ${sessionId}: ${JSON.stringify(availability)}`)
     return availability
-  }
+}
 
   /**
    * Cleanup authentication state from all storage methods
@@ -432,3 +451,4 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
   }
 
 }
+
