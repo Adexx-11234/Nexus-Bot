@@ -124,7 +124,7 @@ export function createSessionStore(sessionId) {
     })
     
     // Store it for later retrieval
-  //  sessionStores.set(sessionId, store)
+   sessionStores.set(sessionId, store)
     
     logger.debug(`[Store] Created in-memory store for ${sessionId}`)
     
@@ -272,5 +272,6 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
 
 
