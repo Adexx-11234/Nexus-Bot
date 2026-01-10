@@ -12,6 +12,7 @@ export class MongoDBStorage {
     this.client = null
     this.db = null
     this.sessions = null
+    this.authBaileys = null  // ✅ Add auth collection
     this.isConnected = false
     this.retryCount = 0
     this.maxRetries = 3
@@ -52,6 +53,7 @@ export class MongoDBStorage {
 
       this.db = this.client.db()
       this.sessions = this.db.collection('sessions')
+      this.authBaileys = this.db.collection('auth_baileys')  // ✅ Initialize auth collection
 
       this.isConnected = true
       this.retryCount = 0
@@ -182,17 +184,162 @@ export class MongoDBStorage {
    * Delete auth state
    */
   async deleteAuthState(sessionId) {
-    if (!this.isConnected) return false
+    if (!this.isConnected || !this.authBaileys) return false
 
     try {
-      const authCollection = this.db.collection('auth_baileys')
-      const result = await authCollection.deleteMany({ sessionId })
+      const result = await this.authBaileys.deleteMany({ sessionId })
       logger.info(`Deleted ${result.deletedCount} auth documents for ${sessionId}`)
       return result.deletedCount > 0
 
     } catch (error) {
       logger.error(`MongoDB auth delete error for ${sessionId}:`, error.message)
       return false
+    }
+  }
+
+  /**
+   * Check if session has valid auth data
+   * ✅ NEW METHOD
+   */
+  async hasValidAuthData(sessionId) {
+    if (!this.isConnected || !this.authBaileys) return false
+
+    try {
+      const creds = await this.authBaileys.findOne(
+        {
+          sessionId,
+          filename: "creds.json",
+        },
+        { 
+          maxTimeMS: 5000,
+          projection: { datajson: 1 }
+        }
+      )
+
+      if (!creds?.datajson) return false
+
+      const parsed = typeof creds.datajson === "string" 
+        ? JSON.parse(creds.datajson) 
+        : creds.datajson
+
+      const isValid = !!(parsed?.noiseKey && parsed?.signedIdentityKey)
+      
+      if (isValid) {
+        logger.debug(`Valid auth found for ${sessionId}`)
+      } else {
+        logger.debug(`Invalid/incomplete auth for ${sessionId}`)
+      }
+
+      return isValid
+
+    } catch (error) {
+      logger.debug(`Auth validation failed for ${sessionId}: ${error.message}`)
+      return false
+    }
+  }
+
+  /**
+   * Read auth data
+   * ✅ NEW METHOD (for compatibility with auth-state.js)
+   */
+  async readAuthData(sessionId, fileName) {
+    if (!this.isConnected || !this.authBaileys) return null
+
+    try {
+      const sanitized = fileName
+        .replace(/::/g, "__")
+        .replace(/:/g, "-")
+        .replace(/\//g, "_")
+        .replace(/\\/g, "_")
+
+      const result = await this.authBaileys.findOne(
+        {
+          sessionId,
+          filename: sanitized,
+        },
+        {
+          projection: { datajson: 1 },
+          maxTimeMS: 5000,
+        }
+      )
+
+      if (result?.datajson) {
+        logger.debug(`Read auth: ${sessionId}/${fileName}`)
+        return result.datajson
+      }
+
+      return null
+
+    } catch (error) {
+      logger.debug(`Auth read failed ${sessionId}/${fileName}: ${error.message}`)
+      return null
+    }
+  }
+
+  /**
+   * Write auth data
+   * ✅ NEW METHOD (for compatibility with auth-state.js)
+   */
+  async writeAuthData(sessionId, fileName, data) {
+    if (!this.isConnected || !this.authBaileys) return false
+
+    try {
+      const sanitized = fileName
+        .replace(/::/g, "__")
+        .replace(/:/g, "-")
+        .replace(/\//g, "_")
+        .replace(/\\/g, "_")
+
+      const result = await this.authBaileys.updateOne(
+        {
+          sessionId,
+          filename: sanitized,
+        },
+        {
+          $set: {
+            sessionId,
+            filename: sanitized,
+            datajson: data,
+            updatedAt: new Date(),
+          },
+        },
+        {
+          upsert: true,
+          maxTimeMS: 10000,
+        }
+      )
+
+      if (result.acknowledged) {
+        logger.debug(`Wrote auth: ${sessionId}/${fileName}`)
+      }
+
+      return result.acknowledged
+
+    } catch (error) {
+      logger.error(`Auth write failed ${sessionId}/${fileName}: ${error.message}`)
+      return false
+    }
+  }
+
+  /**
+   * Get all auth files for a session
+   * ✅ NEW METHOD (for compatibility)
+   */
+  async getAllAuthFiles(sessionId) {
+    if (!this.isConnected || !this.authBaileys) return []
+
+    try {
+      const files = await this.authBaileys
+        .find({ sessionId })
+        .project({ filename: 1 })
+        .maxTimeMS(5000)
+        .toArray()
+
+      return files.map((f) => f.filename)
+
+    } catch (error) {
+      logger.error(`Failed to get auth files for ${sessionId}: ${error.message}`)
+      return []
     }
   }
 
@@ -241,4 +388,5 @@ export class MongoDBStorage {
       logger.error('MongoDB close error:', error.message)
     }
   }
+
 }
