@@ -1,6 +1,6 @@
 import { createRequire } from 'module'
 import NodeCache from "node-cache"
-import { jidNormalizedUser, makeInMemoryStore, makeWASocket, Browsers, fetchLatestBaileysVersion, DEFAULT_CONNECTION_CONFIG } from "@whiskeysockets/baileys"
+import { jidNormalizedUser, makeWASocket, Browsers, fetchLatestBaileysVersion, DEFAULT_CONNECTION_CONFIG } from "@whiskeysockets/baileys"
 import { logger } from "../utils/logger.js"
 import pino from "pino"
 
@@ -119,12 +119,12 @@ export function createSessionStore(sessionId) {
   }
   
   try {
-    const store = makeInMemoryStore({ 
+  /*  const store = makeInMemoryStore({ 
       logger: baileysLogger 
-    })
+    })*/
     
     // Store it for later retrieval
-    sessionStores.set(sessionId, store)
+  //  sessionStores.set(sessionId, store)
     
     logger.debug(`[Store] Created in-memory store for ${sessionId}`)
     
@@ -272,3 +272,4 @@ export function setupSocketDefaults(sock) {
 export function getBaileysConfig() {
   return { ...baileysConfig }
 }
+
