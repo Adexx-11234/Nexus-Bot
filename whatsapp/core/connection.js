@@ -12,6 +12,7 @@ export class ConnectionManager {
   constructor() {
     this.fileManager = null
     this.mongoClient = null
+    this.mongoStorage = null
     this.activeSockets = new Map()
     this.pairingInProgress = new Set()
     this.connectionTimeouts = new Map()
@@ -23,6 +24,7 @@ export class ConnectionManager {
   initialize(fileManager, mongoClient = null) {
     this.fileManager = fileManager
     this.mongoClient = mongoClient
+    this.mongoStorage = mongoStorage
     logger.info('Connection manager initialized')
   }
 
@@ -428,4 +430,5 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
 
     logger.info('Connection manager cleanup completed')
   }
+
 }
