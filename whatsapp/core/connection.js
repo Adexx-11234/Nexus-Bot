@@ -36,53 +36,55 @@ export class ConnectionManager {
    * @param {boolean} allowPairing - Whether to allow pairing code generation
    * @returns {Promise<Object>} WhatsApp socket instance
    */
-async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairing = true) {
-  try {
-    logger.info(`Creating connection for ${sessionId}`)
+  async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairing = true) {
+    try {
+      logger.info(`Creating connection for ${sessionId}`)
 
-    // Get authentication state
-    const authState = await this._getAuthState(sessionId)
-    if (!authState) {
-      throw new Error('Failed to get authentication state')
+      this.pairingInProgress.delete(sessionId)
+
+      // Get authentication state
+      const authState = await this._getAuthState(sessionId)
+      if (!authState) {
+        throw new Error('Failed to get authentication state')
+      }
+
+      // ✅ Create store BEFORE socket
+      const { createBaileysSocket } = await import('./config.js')
+
+      // ✅ Create socket WITH getMessage function
+      const sock = createBaileysSocket(authState.state, sessionId)
+
+      // ✅ IMPORTANT: Give the store a moment to start listening to events
+      // This ensures it catches all the initial sync data
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      logger.info(`Store bound and ready for ${sessionId}`)
+
+      // Setup credentials update handler
+      sock.ev.on('creds.update', authState.saveCreds)
+
+      // Store socket metadata
+      sock.sessionId = sessionId
+      sock.authMethod = authState.method
+      sock.authCleanup = authState.cleanup
+      sock.connectionCallbacks = callbacks
+
+      // Track active socket
+      this.activeSockets.set(sessionId, sock)
+
+      // Handle pairing if needed
+      if (allowPairing && phoneNumber && !authState.state.creds?.registered) {
+        this._schedulePairing(sock, sessionId, phoneNumber, callbacks)
+      }
+
+      logger.info(`Socket created for ${sessionId} using ${authState.method} auth`)
+      return sock
+
+    } catch (error) {
+      logger.error(`Failed to create connection for ${sessionId}:`, error)
+      throw error
     }
-
-    // ✅ Create store BEFORE socket
-    const { createBaileysSocket} = await import('./config.js')
-
-    // ✅ Create socket WITH getMessage function
-    const sock = createBaileysSocket(authState.state, sessionId)
-    
-    // ✅ IMPORTANT: Give the store a moment to start listening to events
-    // This ensures it catches all the initial sync data
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    logger.info(`Store bound and ready for ${sessionId}`)
-
-    // Setup credentials update handler
-    sock.ev.on('creds.update', authState.saveCreds)
-
-    // Store socket metadata
-    sock.sessionId = sessionId
-    sock.authMethod = authState.method
-    sock.authCleanup = authState.cleanup
-    sock.connectionCallbacks = callbacks
-
-    // Track active socket
-    this.activeSockets.set(sessionId, sock)
-
-    // Handle pairing if needed
-    if (allowPairing && phoneNumber && !authState.state.creds?.registered) {
-      this._schedulePairing(sock, sessionId, phoneNumber, callbacks)
-    }
-
-    logger.info(`Socket created for ${sessionId} using ${authState.method} auth`)
-    return sock
-
-  } catch (error) {
-    logger.error(`Failed to create connection for ${sessionId}:`, error)
-    throw error
   }
-}
 
   /**
    * Get authentication state (MongoDB or file-based)
@@ -101,7 +103,7 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
           // Validate MongoDB auth
           if (mongoAuth?.state?.creds?.noiseKey && mongoAuth.state.creds?.signedIdentityKey) {
             logger.info(`Using MongoDB auth for ${sessionId}`)
-            
+
             // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
             const authState = {
               creds: mongoAuth.state.creds,
@@ -110,7 +112,7 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
                 pino({ level: 'silent' })
               )
             }
-            
+
             return {
               state: authState,
               saveCreds: mongoAuth.saveCreds,
@@ -137,7 +139,7 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
       // Validate file auth
       if (fileAuth?.state?.creds?.noiseKey && fileAuth.state.creds?.signedIdentityKey) {
         logger.info(`Using file auth for ${sessionId}`)
-        
+
         // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
         const authState = {
           creds: fileAuth.state.creds,
@@ -146,11 +148,11 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
             pino({ level: 'silent' })
           )
         }
-        
+
         return {
           state: authState,
           saveCreds: fileAuth.saveCreds,
-          cleanup: () => {},
+          cleanup: () => { },
           method: 'file'
         }
       }
@@ -191,7 +193,7 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
       } catch (error) {
         logger.error(`Pairing error for ${sessionId}:`, error)
         this.pairingInProgress.delete(sessionId)
-        
+
         if (callbacks?.onError) {
           callbacks.onError(error)
         }
@@ -202,7 +204,7 @@ async createConnection(sessionId, phoneNumber = null, callbacks = {}, allowPairi
   /**
  * Check authentication availability across storage methods
  */
-async checkAuthAvailability(sessionId) {
+  async checkAuthAvailability(sessionId) {
     const availability = {
       mongodb: false,
       file: false,
@@ -218,7 +220,7 @@ async checkAuthAvailability(sessionId) {
         logger.debug(`MongoDB auth check via mongoStorage failed: ${error.message}`)
         availability.mongodb = false
       }
-    } 
+    }
     // Fallback to collection-based check
     else if (this.mongoClient) {
       try {
@@ -245,12 +247,12 @@ async checkAuthAvailability(sessionId) {
     }
 
     // Determine preferred method
-    availability.preferred = availability.mongodb ? 'mongodb' : 
-                            availability.file ? 'file' : 'none'
+    availability.preferred = availability.mongodb ? 'mongodb' :
+      availability.file ? 'file' : 'none'
 
     logger.info(`Auth availability for ${sessionId}: ${JSON.stringify(availability)}`)
     return availability
-}
+  }
 
   /**
    * Cleanup authentication state from all storage methods
@@ -295,7 +297,7 @@ async checkAuthAvailability(sessionId) {
   async disconnectSocket(sessionId) {
     try {
       const sock = this.activeSockets.get(sessionId)
-      
+
       if (sock) {
         // Call socket cleanup if available
         if (typeof sock.authCleanup === 'function') {
@@ -337,7 +339,7 @@ async checkAuthAvailability(sessionId) {
     // Set new timeout
     const timeout = setTimeout(callback, duration)
     this.connectionTimeouts.set(sessionId, timeout)
-    
+
     logger.debug(`Connection timeout set for ${sessionId} (${duration}ms)`)
   }
 

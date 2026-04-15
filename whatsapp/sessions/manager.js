@@ -89,7 +89,7 @@ export class SessionManager {
    */
   async _waitForMongoDB(maxWaitTime = 10000) {
     const startTime = Date.now()
-    
+
     while (Date.now() - startTime < maxWaitTime) {
       if (this.storage.isMongoConnected && this.storage.sessions) {
         this.connectionManager.mongoClient = this.storage.client
@@ -135,7 +135,7 @@ export class SessionManager {
       if (this.activeSockets.has(sessionId) && !isReconnect) {
         const existingSocket = this.activeSockets.get(sessionId)
         const isConnected = existingSocket?.user && existingSocket?.readyState === existingSocket?.ws?.OPEN
-        
+
         if (isConnected) {
           logger.info(`Session ${sessionId} already exists and is connected`)
           return existingSocket
@@ -158,7 +158,7 @@ export class SessionManager {
       // Cleanup stale auth if new pairing
       if (!isReconnect && allowPairing) {
         const authAvailability = await this.connectionManager.checkAuthAvailability(sessionId)
-        
+
         if (authAvailability.preferred !== 'none') {
           logger.info(`Cleaning up stale auth for new pairing: ${sessionId}`)
           await this.performCompleteUserCleanup(sessionId)
@@ -227,7 +227,7 @@ export class SessionManager {
 
       if (connection === 'open') {
         logger.info(`✅ Web session ${sessionId} paired successfully - preparing handoff to main server`)
-        
+
         // Update database - mark as connected but NOT detected
         await this.storage.updateSession(sessionId, {
           isConnected: true,
@@ -268,7 +268,7 @@ export class SessionManager {
         // Handle 401 (Logout) - Complete cleanup
         if (statusCode === 401) {
           logger.warn(`Web session ${sessionId} logged out (401) - cleaning up`)
-          
+
           await this.storage.updateSession(sessionId, {
             isConnected: false,
             connectionStatus: 'disconnected'
@@ -276,7 +276,7 @@ export class SessionManager {
 
           await this.connectionManager.cleanupAuthState(sessionId)
           await this._cleanupSocketOnly(sessionId, sock)
-          
+
           this.activeSockets.delete(sessionId)
           this.sessionState.delete(sessionId)
 
@@ -291,7 +291,7 @@ export class SessionManager {
         // Handle 515 (Restart Required) - Normal after pairing
         if (statusCode === 515) {
           logger.info(`Web session ${sessionId} restart required (515) - reconnecting...`)
-          
+
           await this.storage.updateSession(sessionId, {
             isConnected: false,
             connectionStatus: 'reconnecting',
@@ -306,11 +306,11 @@ export class SessionManager {
           setTimeout(async () => {
             try {
               logger.info(`Reconnecting ${sessionId} after 515...`)
-              
+
               const session = await this.storage.getSession(sessionId)
               if (!session?.phoneNumber) {
                 logger.error(`No phone number found for ${sessionId}`)
-                
+
                 await this.storage.updateSession(sessionId, {
                   isConnected: false,
                   connectionStatus: 'disconnected'
@@ -329,13 +329,13 @@ export class SessionManager {
               if (newSock) {
                 this.activeSockets.set(sessionId, newSock)
                 newSock.connectionCallbacks = callbacks
-                
+
                 this._setupConnectionHandler(newSock, sessionId, callbacks)
-                
+
                 logger.info(`Reconnection initiated for ${sessionId}`)
               } else {
                 logger.error(`Failed to reconnect ${sessionId}`)
-                
+
                 await this.storage.updateSession(sessionId, {
                   isConnected: false,
                   connectionStatus: 'disconnected'
@@ -343,7 +343,7 @@ export class SessionManager {
               }
             } catch (error) {
               logger.error(`Reconnection error for ${sessionId}:`, error)
-              
+
               await this.storage.updateSession(sessionId, {
                 isConnected: false,
                 connectionStatus: 'disconnected'
@@ -354,10 +354,30 @@ export class SessionManager {
           return
         }
 
+        if (statusCode === 405) {
+          logger.warn(`Web session ${sessionId} method not allowed (405) - stopping`)
+
+          await this.storage.updateSession(sessionId, {
+            isConnected: false,
+            connectionStatus: 'disconnected'
+          })
+
+          await this._cleanupSocketOnly(sessionId, sock)
+          this.activeSockets.delete(sessionId)
+          this.sessionState.delete(sessionId)
+
+          // Do NOT call onError here if onError triggers reconnection
+          // Instead use a dedicated callback or just log
+          if (callbacks.onDisconnected) {
+            callbacks.onDisconnected(405)
+          }
+          return
+        }
+
         // Handle 428 (Connection Replaced)
         if (statusCode === 428) {
           logger.warn(`Web session ${sessionId} connection replaced (428)`)
-          
+
           await this.storage.updateSession(sessionId, {
             isConnected: false,
             connectionStatus: 'disconnected'
@@ -365,7 +385,7 @@ export class SessionManager {
 
           await this.connectionManager.cleanupAuthState(sessionId)
           await this._cleanupSocketOnly(sessionId, sock)
-          
+
           this.activeSockets.delete(sessionId)
           this.sessionState.delete(sessionId)
 
@@ -441,7 +461,7 @@ export class SessionManager {
       if (sock?.ev?.isBuffering?.()) {
         try {
           sock.ev.flush()
-        } catch {}
+        } catch { }
       }
 
       // Remove event listeners
