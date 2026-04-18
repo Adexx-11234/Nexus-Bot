@@ -878,9 +878,13 @@ body {
   width: 100%;
   display: block;
   position: relative;
+  isolation: isolate;
+  transform: translateZ(0);
+  /* forces new stacking context */
 }
 
 .iti__flag-container {
+  position: relative;
   z-index: 5;
 }
 
@@ -911,6 +915,7 @@ body {
   left: 0 !important;
   margin-bottom: 8px !important;
   margin-top: 0 !important;
+  z-index: 9999 !important;
   background-color: var(--bg-card-solid) !important;
   border: 1px solid var(--glass-border) !important;
   color: var(--text-primary) !important;
@@ -918,7 +923,6 @@ body {
   box-shadow: 0 8px 32px var(--shadow-lg) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  z-index: 9999 !important;
 }
 
 .iti__country-list .iti__country {
