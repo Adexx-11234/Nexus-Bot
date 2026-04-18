@@ -11,7 +11,6 @@ class DashboardHandler {
   async init() {
     await this.checkAuth()
     await this.loadProfile()
-    this.setupIntlTelInput()
     await this.loadSessionStatus()
     this.setupEventListeners()
     this.startAutoRefresh()
@@ -20,6 +19,12 @@ class DashboardHandler {
   setupIntlTelInput() {
     const phoneInput = document.getElementById('phone-number') // or 'connect-phone' in dashboard
     if (!phoneInput || !window.intlTelInput) return
+
+    // Destroy existing instance if any
+    if (this.iti) {
+      this.iti.destroy()
+      this.iti = null
+    }
 
     this.iti = window.intlTelInput(phoneInput, {
       initialCountry: 'ng',
@@ -207,7 +212,10 @@ class DashboardHandler {
         pairingContainer.classList.add('hidden')
       }
     } else {
-      if (connectCard) connectCard.classList.remove('hidden')
+      if (connectCard) {
+        connectCard.classList.remove('hidden')
+        this.setupIntlTelInput() // reinitialize after card is visible
+      }
       if (disconnectBtn) disconnectBtn.classList.add('hidden')
       if (pairingContainer) pairingContainer.classList.add('hidden')
 
