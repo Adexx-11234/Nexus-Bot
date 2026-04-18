@@ -36,24 +36,28 @@ class ThemeManager {
   }
 
   setupScrollAnimations() {
-    const observerOptions = {
-      root: null,
-      rootMargin: '0px',
-      threshold: 0.15
-    };
+    const elements = document.querySelectorAll('.animate-on-scroll')
+
+    // On mobile, just show everything immediately
+    if (window.innerWidth <= 768) {
+      elements.forEach(el => el.classList.add('is-visible'))
+      return
+    }
 
     const observer = new IntersectionObserver((entries, observer) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
+          entry.target.classList.add('is-visible')
+          observer.unobserve(entry.target)
         }
-      });
-    }, observerOptions);
+      })
+    }, {
+      root: null,
+      rootMargin: '0px',
+      threshold: 0.1
+    })
 
-    document.querySelectorAll('.animate-on-scroll').forEach((el) => {
-      observer.observe(el);
-    });
+    elements.forEach(el => observer.observe(el))
   }
 
   showToast(message, type = 'info') {
@@ -67,7 +71,7 @@ class ThemeManager {
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    
+
     const icons = {
       success: '✅',
       error: '❌',
@@ -99,7 +103,7 @@ class ThemeManager {
 }
 
 // Global alert method bridge
-window.showAlert = function(message, type) {
+window.showAlert = function (message, type) {
   if (window.themeManager && window.themeManager.showToast) {
     window.themeManager.showToast(message, type);
   } else {

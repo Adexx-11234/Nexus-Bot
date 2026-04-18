@@ -655,9 +655,9 @@ body {
 
 /* Animations */
 .animate-on-scroll {
-  opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
 }
 
 .animate-on-scroll.is-visible {
@@ -940,14 +940,22 @@ body {
 }
 
 .header-user-info {
-  max-width: 100px;
+  text-align: right;
+  min-width: 0;
   overflow: hidden;
 }
 
 .header-user-info div {
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 110px;
+}
+
+@media (max-width: 480px) {
+  .header-user-info {
+    display: none;
+  }
 }
 
 /* ============================================

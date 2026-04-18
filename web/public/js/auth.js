@@ -8,15 +8,15 @@ class AuthHandler {
   init() {
     this.setupForms()
     this.setupPasswordToggles()
-    this.setupIntlTelInput()
+    // wait for full page load including CDN scripts
+    if (document.readyState === 'complete') {
+      this.setupIntlTelInput()
+    } else {
+      window.addEventListener('load', () => this.setupIntlTelInput())
+    }
   }
 
   setupIntlTelInput() {
-    if (!window.intlTelInput) {
-      setTimeout(() => this.setupIntlTelInput(), 300)
-      return
-    }
-
     const phoneInput = document.getElementById('phone-number')
     if (!phoneInput) return
 
