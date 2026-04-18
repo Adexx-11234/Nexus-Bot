@@ -658,7 +658,6 @@ body {
   opacity: 0;
   transform: translateY(30px);
   transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: opacity, transform;
 }
 
 .animate-on-scroll.is-visible {
@@ -940,6 +939,17 @@ body {
   font-weight: 500;
 }
 
+.header-user-info {
+  max-width: 100px;
+  overflow: hidden;
+}
+
+.header-user-info div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ============================================
    Responsive
    ============================================ */
@@ -949,11 +959,6 @@ html {
 }
 
 @media (max-width: 768px) {
-
-  .bg-blob {
-    display: none;
-    /* blobs cause repaint on viewport resize */
-  }
 
   body {
     background-attachment: scroll;
@@ -1036,9 +1041,6 @@ html {
     gap: 8px;
   }
 
-  .header-user-info {
-    display: none;
-  }
 
   #logout-btn {
     padding: 6px 10px !important;

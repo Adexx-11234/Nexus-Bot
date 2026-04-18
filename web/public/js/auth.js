@@ -32,19 +32,6 @@ class AuthHandler {
       dropdownContainer: document.body
     })
 
-    // Keep keyboard open when opening country dropdown on mobile
-    const flagContainer = phoneInput.closest('.iti').querySelector('.iti__flag-container')
-    if (flagContainer) {
-      flagContainer.addEventListener('mousedown', (e) => {
-        e.preventDefault()
-      })
-      flagContainer.addEventListener('touchstart', (e) => {
-        e.preventDefault()
-        phoneInput.focus()
-        const flagBtn = flagContainer.querySelector('.iti__selected-flag')
-        if (flagBtn) flagBtn.click()
-      }, { passive: false })
-    }
 
     // Position dropdown below input
     phoneInput.addEventListener('open:countrydropdown', () => {
