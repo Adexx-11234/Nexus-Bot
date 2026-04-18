@@ -944,6 +944,10 @@ body {
    Responsive
    ============================================ */
 
+html {
+  overflow-x: hidden;
+}
+
 @media (max-width: 768px) {
   .auth-card {
     padding: 32px 24px;
@@ -989,5 +993,65 @@ body {
 
   .iti__dial-code {
     font-size: 0.8rem !important;
+  }
+
+  /* Fix horizontal overflow/shaking */
+  html,
+  body {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .container {
+    padding: 12px;
+  }
+
+  /* Stack dashboard stat cards vertically */
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Fix header overflow — hide name/phone, shrink buttons */
+  .header-content {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .logo span {
+    font-size: 1.1rem;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .header-actions>div {
+    display: none;
+  }
+
+  #logout-btn {
+    padding: 6px 10px !important;
+    font-size: 0.85rem;
+  }
+
+  .theme-toggle {
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+  }
+
+  /* Fix card-header wrapping on mobile */
+  .card-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .card-title {
+    font-size: 1.2rem;
+  }
+
+  .status-badge {
+    font-size: 0.75rem;
+    padding: 6px 12px;
   }
 }

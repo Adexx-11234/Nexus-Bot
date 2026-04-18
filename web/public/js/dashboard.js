@@ -17,7 +17,7 @@ class DashboardHandler {
   }
 
   setupIntlTelInput() {
-    const phoneInput = document.getElementById('phone-number') // or 'connect-phone' in dashboard
+    const phoneInput = document.getElementById('connect-phone') // or 'connect-phone' in dashboard
     if (!phoneInput || !window.intlTelInput) return
 
     // Destroy existing instance if any
