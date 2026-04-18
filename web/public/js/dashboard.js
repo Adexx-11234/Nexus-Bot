@@ -14,9 +14,24 @@ class DashboardHandler {
     await this.loadSessionStatus()
     this.setupEventListeners()
     this.startAutoRefresh()
+
+    // Fallback: initialize iti after everything loads in case card is already visible
+    setTimeout(() => {
+      const connectCard = document.getElementById('connect-card')
+      if (connectCard && !connectCard.classList.contains('hidden')) {
+        this.setupIntlTelInput()
+      }
+    }, 500)
   }
 
   setupIntlTelInput() {
+
+    if (!window.intlTelInput) {
+      // Library not loaded yet, retry after 300ms
+      setTimeout(() => this.setupIntlTelInput(), 300)
+      return
+    }
+
     const phoneInput = document.getElementById('connect-phone') // or 'connect-phone' in dashboard
     if (!phoneInput || !window.intlTelInput) return
 

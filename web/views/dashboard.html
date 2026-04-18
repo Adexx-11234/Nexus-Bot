@@ -27,7 +27,9 @@
       <div class="header-actions">
         <div style="text-align: right; margin-right: 15px;">
           <div style="font-weight: 700; color: var(--text-primary);" id="user-name">User</div>
-          <div style="font-size: 0.875rem; color: var(--text-secondary);" id="user-phone">Loading...</div>
+          <div
+            style="font-size: 0.875rem; color: var(--text-secondary); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+            id="user-phone">Loading...</div>
         </div>
         <button id="theme-toggle" class="theme-toggle" title="Toggle theme">🌙</button>
         <button id="logout-btn" class="btn btn-danger" style="padding: 8px 16px;">Logout</button>
