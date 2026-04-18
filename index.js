@@ -16,7 +16,7 @@ global.__APP_INSTANCE_RUNNING__ = true
 
 
 const logger = createComponentLogger("WEB_SERVER")
-const PORT = process.env.WEB_PORT || 3000
+const PORT = process.env.PORT || 3000
 const app = express()
 
 // NO Telegram Bot
@@ -73,12 +73,12 @@ async function initializeWebServer() {
   }
 
   logger.info("Starting Web Connection Server...")
-  
+
   try {
     // 1. Database - MongoDB ONLY (for shared session storage)
     logger.info("Connecting to database...")
     await testConnection()
-    
+
     // Warmup MongoDB connection pool
     for (let i = 0; i < 3; i++) {
       await testConnection()
@@ -118,9 +118,9 @@ function setupMaintenanceTasks() {
 
   setInterval(async () => {
     if (maintenanceRunning) return
-    
+
     maintenanceRunning = true
-    
+
     try {
       if (mongoStorage?.isConnected) {
         await testConnection()
@@ -136,7 +136,7 @@ function setupMaintenanceTasks() {
 // Graceful shutdown
 async function gracefulShutdown(signal) {
   logger.info(`Shutting down (${signal})...`)
-  
+
   try {
     if (server) {
       server.close()
@@ -148,7 +148,7 @@ async function gracefulShutdown(signal) {
     }
 
     await closePool()
-    
+
     logger.info("Shutdown completed")
     process.exit(0)
   } catch (error) {

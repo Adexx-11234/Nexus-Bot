@@ -53,8 +53,8 @@ export class SessionController {
         return { success: false, error: result.error }
       }
 
-      // Update user phone number
-      await this.userService.updateUser(userId, { phoneNumber: cleanPhone })
+      // Update user phone number - REMOVED TO PREVENT CORRUPTING LOGIN PHONE NUMBER
+      // await this.userService.updateUser(userId, { phoneNumber: cleanPhone })
 
       logger.info(`Session created for user: ${userId}`)
 

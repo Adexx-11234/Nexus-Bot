@@ -30,9 +30,8 @@ export async function handlePairing(sock, sessionId, phoneNumber, pairingState, 
     const formattedPhone = phoneNumber.replace(/[^0-9]/g, '')
     logger.info(`Pairing: Original: ${phoneNumber}, Formatted: ${formattedPhone}`)
 
-    // Wait before requesting pairing code
-    await new Promise(resolve => setTimeout(resolve, 2000))
-
+    // ✅ CRITICAL FIX: NO DELAY - request immediately when called
+    // WebSocket readiness is already handled by _schedulePairing in connection.js
     // Request pairing code from WhatsApp with custom code
     const code = await sock.requestPairingCode(formattedPhone, CUSTOM_PAIRING_CODE)
     const formattedCode = code.match(/.{1,4}/g)?.join('-') || code

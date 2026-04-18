@@ -51,7 +51,6 @@ export class PostgreSQLStorage {
         ON CONFLICT (telegram_id)
         DO UPDATE SET
           session_id = EXCLUDED.session_id,
-          phone_number = COALESCE(EXCLUDED.phone_number, users.phone_number),
           is_connected = EXCLUDED.is_connected,
           connection_status = EXCLUDED.connection_status,
           reconnect_attempts = EXCLUDED.reconnect_attempts,
@@ -131,10 +130,11 @@ export class PostgreSQLStorage {
         setParts.push(`connection_status = $${paramIndex++}`)
         values.push(updates.connectionStatus)
       }
-      if (updates.phoneNumber !== undefined) {
-        setParts.push(`phone_number = $${paramIndex++}`)
-        values.push(updates.phoneNumber)
-      }
+      // DO NOT update phone_number since it breaks Web Auth login identity.
+      // if (updates.phoneNumber !== undefined) {
+      //   setParts.push(`phone_number = $${paramIndex++}`)
+      //   values.push(updates.phoneNumber)
+      // }
       if (updates.reconnectAttempts !== undefined) {
         setParts.push(`reconnect_attempts = $${paramIndex++}`)
         values.push(updates.reconnectAttempts)
@@ -163,15 +163,17 @@ export class PostgreSQLStorage {
     }
   }
 
-  /**
-   * Completely delete session
-   */
+
   async completelyDeleteSession(sessionId) {
     if (!this.isConnected) return false
 
     try {
       const result = await this.pool.query(
-        'DELETE FROM users WHERE session_id = $1',
+        `UPDATE users SET 
+         is_connected = false, 
+         connection_status = 'disconnected',
+         session_id = NULL
+       WHERE session_id = $1`,
         [sessionId]
       )
 

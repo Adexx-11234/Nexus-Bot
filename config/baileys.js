@@ -1,6 +1,6 @@
 import { createRequire } from 'module'
 import NodeCache from "node-cache"
-import { jidNormalizedUser, makeWASocket, makeInMemoryStore, Browsers, fetchLatestBaileysVersion, DEFAULT_CONNECTION_CONFIG } from "@nexustechpro/baileys"
+import { makeWASocket, makeInMemoryStore, Browsers, fetchLatestBaileysVersion, DEFAULT_CONNECTION_CONFIG } from "@nexustechpro/baileys"
 import { logger } from "../utils/logger.js"
 import pino from "pino"
 
@@ -15,12 +15,18 @@ const baileysLogger = pino({
 })
 // ==================== END BAILEYS SILENT LOGGER ====================
 
+// ✅ CRITICAL FIX: Fetch latest WhatsApp version (panel does this, web was missing it)
+const { version, isLatest } = await fetchLatestBaileysVersion()
+
 // Smart group cache with invalidation on updates
 const groupCache = new NodeCache({ 
   stdTTL: 1800,      // 30 minutes default
   checkperiod: 300,  // Check every 5 minutes
   useClones: false   // Performance optimization
 })
+
+// ✅ CRITICAL FIX: Message retry counter cache (panel has this, web was missing it)
+const msgRetryCounterCache = new NodeCache()
 
 // ✅ CRITICAL: Store instances per session
 const sessionStores = new Map()
@@ -32,7 +38,8 @@ const defaultGetMessage = async (key) => {
 
 export const baileysConfig = {
   ...DEFAULT_CONNECTION_CONFIG,
-  logger: pino({ level: 'fatal' }), 
+  version,  // ✅ CRITICAL: Pass version to prevent 405 error
+  logger: baileysLogger, 
   generateHighQualityLinkPreview: true,
 }
 
@@ -54,7 +61,8 @@ export function createBaileysSocket(authState, sessionId) {
   try {
     const sock = makeWASocket({
       ...baileysConfig,
-      auth: authState
+      auth: authState,
+      msgRetryCounterCache,  // ✅ CRITICAL: Added missing retry counter cache
     })
     
     // Setup default socket properties

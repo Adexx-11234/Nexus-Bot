@@ -11,9 +11,21 @@ class DashboardHandler {
   async init() {
     await this.checkAuth()
     await this.loadProfile()
+    this.setupIntlTelInput()
     await this.loadSessionStatus()
     this.setupEventListeners()
     this.startAutoRefresh()
+  }
+
+  setupIntlTelInput() {
+    const phoneInput = document.getElementById('connect-phone');
+    if (phoneInput && window.intlTelInput) {
+      this.iti = window.intlTelInput(phoneInput, {
+        initialCountry: "ng",
+        separateDialCode: true,
+        utilsScript: "https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js"
+      });
+    }
   }
 
   async checkAuth() {
@@ -268,7 +280,15 @@ class DashboardHandler {
     const phoneInput = document.getElementById('connect-phone')
     if (!phoneInput) return
 
-    const phoneNumber = phoneInput.value.trim()
+    let phoneNumber = phoneInput.value.trim()
+    
+    // Get E.164 format if intl-tel-input is initialized
+    if (this.iti && this.iti.isValidNumber()) {
+        phoneNumber = this.iti.getNumber()
+    } else if (this.iti) {
+        phoneNumber = this.iti.getNumber() || phoneNumber
+    }
+
     if (!phoneNumber) {
       this.showAlert('Please enter a phone number', 'error')
       return
@@ -442,27 +462,11 @@ class DashboardHandler {
   }
 
   showAlert(message, type) {
-    const alertContainer = document.getElementById('alert-container')
-    if (!alertContainer) return
-
-    const alertClass = type === 'error' ? 'alert-error' : 
-                      type === 'success' ? 'alert-success' : 
-                      type === 'warning' ? 'alert-warning' : 'alert-info'
-
-    const icon = type === 'error' ? '❌' : 
-                type === 'success' ? '✅' : 
-                type === 'warning' ? '⚠️' : 'ℹ️'
-
-    alertContainer.innerHTML = `
-      <div class="alert ${alertClass}">
-        <span>${icon}</span>
-        <span>${message}</span>
-      </div>
-    `
-
-    setTimeout(() => {
-      alertContainer.innerHTML = ''
-    }, 5000)
+    if (window.showAlert) {
+      window.showAlert(message, type);
+    } else {
+      alert(message);
+    }
   }
 
   setLoading(isLoading, btnId, text) {

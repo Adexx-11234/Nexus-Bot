@@ -43,7 +43,7 @@ export class ConnectionManager {
       this.pairingInProgress.delete(sessionId)
 
       // Get authentication state
-      const authState = await this._getAuthState(sessionId)
+      const authState = await this._getAuthState(sessionId, allowPairing)
       if (!authState) {
         throw new Error('Failed to get authentication state')
       }
@@ -90,8 +90,10 @@ export class ConnectionManager {
    * Get authentication state (MongoDB or file-based)
    * @private
    */
-  async _getAuthState(sessionId) {
+  async _getAuthState(sessionId, allowPairing = true) {
     try {
+      logger.info(`[${sessionId}] Getting auth state (pairing: ${allowPairing})`)
+
       // Try MongoDB first if available
       if (this.mongoClient) {
         try {
@@ -100,30 +102,34 @@ export class ConnectionManager {
           const collection = db.collection('auth_baileys')
           const mongoAuth = await useMongoDBAuthState(collection, sessionId)
 
-          // Validate MongoDB auth
-          if (mongoAuth?.state?.creds?.noiseKey && mongoAuth.state.creds?.signedIdentityKey) {
-            logger.info(`Using MongoDB auth for ${sessionId}`)
+          // ✅ FIX: Allow fresh creds when pairing (panel behavior)
+          if (mongoAuth?.state?.creds) {
+            const hasCreds = mongoAuth.state.creds.noiseKey && mongoAuth.state.creds.signedIdentityKey
 
-            // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
-            const authState = {
-              creds: mongoAuth.state.creds,
-              keys: makeCacheableSignalKeyStore(
-                mongoAuth.state.keys,
-                pino({ level: 'silent' })
-              )
-            }
+            if (hasCreds || allowPairing) {
+              logger.info(`[${sessionId}] ✅ Using MongoDB auth`)
 
-            return {
-              state: authState,
-              saveCreds: mongoAuth.saveCreds,
-              cleanup: mongoAuth.cleanup,
-              method: 'mongodb'
+              // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
+              const authState = {
+                creds: mongoAuth.state.creds,
+                keys: makeCacheableSignalKeyStore(
+                  mongoAuth.state.keys,
+                  pino({ level: 'silent' })
+                )
+              }
+
+              return {
+                state: authState,
+                saveCreds: mongoAuth.saveCreds,
+                cleanup: mongoAuth.cleanup,
+                method: 'mongodb'
+              }
             }
-          } else {
-            logger.warn(`Invalid MongoDB auth for ${sessionId}, falling back to file`)
           }
+
+          logger.warn(`[${sessionId}] MongoDB auth invalid`)
         } catch (mongoError) {
-          logger.warn(`MongoDB auth failed for ${sessionId}: ${mongoError.message}`)
+          logger.error(`[${sessionId}] MongoDB auth error: ${mongoError.message}`)
         }
       }
 
@@ -132,13 +138,15 @@ export class ConnectionManager {
         throw new Error('No auth state provider available')
       }
 
+      logger.info(`[${sessionId}] Using file auth`)
+
       this.fileManager.ensureSessionDirectory(sessionId)
       const sessionPath = this.fileManager.getSessionPath(sessionId)
       const fileAuth = await useMultiFileAuthState(sessionPath)
 
-      // Validate file auth
-      if (fileAuth?.state?.creds?.noiseKey && fileAuth.state.creds?.signedIdentityKey) {
-        logger.info(`Using file auth for ${sessionId}`)
+      // ✅ FIX: Allow fresh creds when pairing (panel behavior)
+      if (fileAuth?.state?.creds) {
+        logger.info(`[${sessionId}] ✅ File auth loaded`)
 
         // ✅ CRITICAL: Wrap keys with makeCacheableSignalKeyStore
         const authState = {
@@ -160,7 +168,7 @@ export class ConnectionManager {
       throw new Error('No valid auth state found')
 
     } catch (error) {
-      logger.error(`Auth state retrieval failed for ${sessionId}:`, error)
+      logger.error(`[${sessionId}] Auth retrieval failed: ${error.message}`)
       return null
     }
   }
@@ -179,16 +187,48 @@ export class ConnectionManager {
 
     this.pairingInProgress.add(sessionId)
 
-    // Wait a bit before requesting pairing code
-    setTimeout(async () => {
+    // ✅ FIX: Wait for WebSocket to actually be OPEN before pairing (panel behavior)
+    const waitForWebSocketAndPair = async () => {
       try {
+        logger.info(`Waiting for WebSocket to open: ${sessionId}`)
+
+        const maxWait = 30000
+        const checkInterval = 100
+        let waited = 0
+
+        while (waited < maxWait) {
+          const readyState = sock.ws?.socket?._readyState
+
+          if (sock.ws && readyState === 1) {
+            logger.info(`✅ WebSocket OPEN after ${waited}ms`)
+            break
+          }
+
+          if (waited % 1000 === 0 && waited > 0) {
+            logger.debug(`Waiting... readyState: ${readyState}, waited: ${waited}ms`)
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, checkInterval))
+          waited += checkInterval
+        }
+
+        const finalReadyState = sock.ws?.socket?._readyState
+        if (finalReadyState !== 1) {
+          throw new Error(`WebSocket not ready after ${maxWait}ms`)
+        }
+
+        // Wait for stability
+        await new Promise((resolve) => setTimeout(resolve, 500))
+
+        logger.info(`Requesting pairing code for ${sessionId}`)
+
         const { handlePairing } = await import('../utils/index.js')
         await handlePairing(sock, sessionId, phoneNumber, new Map(), callbacks)
 
-        // Clear pairing state after 5 minutes
+        // Keep pairing flag for 1 minute
         setTimeout(() => {
           this.pairingInProgress.delete(sessionId)
-        }, 500000)
+        }, 60000)
 
       } catch (error) {
         logger.error(`Pairing error for ${sessionId}:`, error)
@@ -198,7 +238,9 @@ export class ConnectionManager {
           callbacks.onError(error)
         }
       }
-    }, 2000)
+    }
+
+    waitForWebSocketAndPair()
   }
 
   /**

@@ -341,9 +341,16 @@ export class WebSessionService {
 
       // Calculate uptime if connected
       let uptime = null
-      if (session.isConnected && sock) {
-        const startTime = session.updatedAt || session.createdAt
-        uptime = Date.now() - new Date(startTime).getTime()
+      if (session.isConnected) {
+        let startTime = session.createdAt || session.updatedAt
+        
+        // Prevent timezone offset rendering bugs causing negative numbers
+        let calculatedUptime = Date.now() - new Date(startTime).getTime()
+        if (calculatedUptime < 0) {
+           calculatedUptime = 0
+        }
+        
+        uptime = calculatedUptime
       }
 
       return {
