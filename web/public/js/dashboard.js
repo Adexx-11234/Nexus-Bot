@@ -40,8 +40,17 @@ class DashboardHandler {
       const rect = phoneInput.getBoundingClientRect()
       dropdown.style.position = 'fixed'
       dropdown.style.top = (rect.bottom + 4) + 'px'
-      dropdown.style.left = '24px'
-      dropdown.style.width = 'calc(100vw - 48px)'
+
+      if (window.innerWidth <= 768) {
+        // Mobile: full width with padding
+        dropdown.style.left = '24px'
+        dropdown.style.width = 'calc(100vw - 48px)'
+      } else {
+        // Desktop: match input width, align to input left
+        dropdown.style.left = rect.left + 'px'
+        dropdown.style.width = rect.width + 'px'
+      }
+
       dropdown.style.zIndex = '99999'
     })
   }
