@@ -12,14 +12,27 @@ class AuthHandler {
   }
 
   setupIntlTelInput() {
-    const phoneInput = document.getElementById('phone-number');
-    if (phoneInput && window.intlTelInput) {
-      this.iti = window.intlTelInput(phoneInput, {
-        initialCountry: "ng",
-        separateDialCode: true,
-        utilsScript: "https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js"
-      });
-    }
+    const phoneInput = document.getElementById('phone-number') // or 'connect-phone' in dashboard
+    if (!phoneInput || !window.intlTelInput) return
+
+    this.iti = window.intlTelInput(phoneInput, {
+      initialCountry: 'ng',
+      separateDialCode: true,
+      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
+      dropdownContainer: document.body  // ← KEY FIX: renders dropdown in body, escapes all stacking contexts
+    })
+
+    // Position dropdown directly below input on open
+    phoneInput.addEventListener('open:countrydropdown', () => {
+      const dropdown = document.querySelector('.iti__dropdown-content') || document.querySelector('.iti__country-list')
+      if (!dropdown) return
+      const rect = phoneInput.getBoundingClientRect()
+      dropdown.style.position = 'fixed'
+      dropdown.style.top = (rect.bottom + 4) + 'px'
+      dropdown.style.left = rect.left + 'px'
+      dropdown.style.width = rect.width + 'px'
+      dropdown.style.zIndex = '99999'
+    })
   }
 
   setupForms() {
@@ -39,11 +52,11 @@ class AuthHandler {
   setupPasswordToggles() {
     const toggleBtns = document.querySelectorAll('.password-toggle');
     toggleBtns.forEach(btn => {
-      btn.addEventListener('click', function(e) {
+      btn.addEventListener('click', function (e) {
         e.preventDefault();
         const targetId = this.getAttribute('data-target');
         const input = document.getElementById(targetId);
-        
+
         if (input.type === 'password') {
           input.type = 'text';
           // Eye closed icon (svg representation for text open)
@@ -62,15 +75,15 @@ class AuthHandler {
 
     let phoneNumber = document.getElementById('phone-number').value.trim()
     const password = document.getElementById('password').value
-    
+
     // Get E.164 format if intl-tel-input is initialized
     if (this.iti && this.iti.isValidNumber()) {
-        phoneNumber = this.iti.getNumber()
+      phoneNumber = this.iti.getNumber()
     } else if (this.iti) {
-        // Fallback or handle invalid gracefully (relying on raw output)
-        phoneNumber = this.iti.getNumber() || this.formatPhoneNumber(phoneNumber)
+      // Fallback or handle invalid gracefully (relying on raw output)
+      phoneNumber = this.iti.getNumber() || this.formatPhoneNumber(phoneNumber)
     } else {
-        phoneNumber = this.formatPhoneNumber(phoneNumber)
+      phoneNumber = this.formatPhoneNumber(phoneNumber)
     }
 
     if (!phoneNumber || !password) {
@@ -114,11 +127,11 @@ class AuthHandler {
 
     // Get E.164 format if intl-tel-input is initialized
     if (this.iti && this.iti.isValidNumber()) {
-        phoneNumber = this.iti.getNumber()
+      phoneNumber = this.iti.getNumber()
     } else if (this.iti) {
-        phoneNumber = this.iti.getNumber() || this.formatPhoneNumber(phoneNumber)
+      phoneNumber = this.iti.getNumber() || this.formatPhoneNumber(phoneNumber)
     } else {
-        phoneNumber = this.formatPhoneNumber(phoneNumber)
+      phoneNumber = this.formatPhoneNumber(phoneNumber)
     }
 
     if (!phoneNumber || !password) {
@@ -175,7 +188,7 @@ class AuthHandler {
     if (!btn) return
 
     btn.disabled = isLoading
-    btn.innerHTML = isLoading 
+    btn.innerHTML = isLoading
       ? `<span class="spinner" style="width: 20px; height: 20px; border-width: 2px;"></span> ${text}`
       : text
   }
@@ -183,12 +196,12 @@ class AuthHandler {
   formatPhoneNumber(phone) {
     // Remove all non-digit characters
     let cleaned = phone.replace(/\D/g, '')
-    
+
     // Add + if not present
     if (!cleaned.startsWith('+')) {
       cleaned = '+' + cleaned
     }
-    
+
     return cleaned
   }
 }

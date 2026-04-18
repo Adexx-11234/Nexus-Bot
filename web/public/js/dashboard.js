@@ -18,14 +18,27 @@ class DashboardHandler {
   }
 
   setupIntlTelInput() {
-    const phoneInput = document.getElementById('connect-phone');
-    if (phoneInput && window.intlTelInput) {
-      this.iti = window.intlTelInput(phoneInput, {
-        initialCountry: "ng",
-        separateDialCode: true,
-        utilsScript: "https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js"
-      });
-    }
+    const phoneInput = document.getElementById('phone-number') // or 'connect-phone' in dashboard
+    if (!phoneInput || !window.intlTelInput) return
+
+    this.iti = window.intlTelInput(phoneInput, {
+      initialCountry: 'ng',
+      separateDialCode: true,
+      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
+      dropdownContainer: document.body  // ← KEY FIX: renders dropdown in body, escapes all stacking contexts
+    })
+
+    // Position dropdown directly below input on open
+    phoneInput.addEventListener('open:countrydropdown', () => {
+      const dropdown = document.querySelector('.iti__dropdown-content') || document.querySelector('.iti__country-list')
+      if (!dropdown) return
+      const rect = phoneInput.getBoundingClientRect()
+      dropdown.style.position = 'fixed'
+      dropdown.style.top = (rect.bottom + 4) + 'px'
+      dropdown.style.left = rect.left + 'px'
+      dropdown.style.width = rect.width + 'px'
+      dropdown.style.zIndex = '99999'
+    })
   }
 
   async checkAuth() {
@@ -79,7 +92,7 @@ class DashboardHandler {
 
       if (data.success && data.status) {
         this.updateSessionUI(data.status)
-        
+
         // Handle different connection states
         if (data.status.connectionStatus === 'connecting') {
           this.pollPairingCode()
@@ -179,13 +192,13 @@ class DashboardHandler {
       if (disconnectBtn) disconnectBtn.classList.remove('hidden')
       if (reconnectBtn) reconnectBtn.classList.add('hidden')
       if (pairingContainer) pairingContainer.classList.add('hidden')
-    } else if (status.connectionStatus === 'connecting' || 
-               status.connectionStatus === 'reconnecting') {
+    } else if (status.connectionStatus === 'connecting' ||
+      status.connectionStatus === 'reconnecting') {
       // Keep UI in connecting/reconnecting state
       if (connectCard) connectCard.classList.add('hidden')
       if (disconnectBtn) disconnectBtn.classList.add('hidden')
       if (reconnectBtn) reconnectBtn.classList.add('hidden')
-      
+
       // Show pairing code only during initial connecting (not reconnecting)
       if (status.connectionStatus === 'connecting' && pairingContainer) {
         pairingContainer.classList.remove('hidden')
@@ -197,7 +210,7 @@ class DashboardHandler {
       if (connectCard) connectCard.classList.remove('hidden')
       if (disconnectBtn) disconnectBtn.classList.add('hidden')
       if (pairingContainer) pairingContainer.classList.add('hidden')
-      
+
       if (reconnectBtn && status.canReconnect) {
         reconnectBtn.classList.remove('hidden')
       }
@@ -281,12 +294,12 @@ class DashboardHandler {
     if (!phoneInput) return
 
     let phoneNumber = phoneInput.value.trim()
-    
+
     // Get E.164 format if intl-tel-input is initialized
     if (this.iti && this.iti.isValidNumber()) {
-        phoneNumber = this.iti.getNumber()
+      phoneNumber = this.iti.getNumber()
     } else if (this.iti) {
-        phoneNumber = this.iti.getNumber() || phoneNumber
+      phoneNumber = this.iti.getNumber() || phoneNumber
     }
 
     if (!phoneNumber) {
@@ -438,7 +451,7 @@ class DashboardHandler {
   async handleLogout() {
     this.stopAutoRefresh()
     this.stopConnectionPolling()
-    
+
     try {
       await fetch('/auth/logout', { method: 'POST' })
       window.location.href = '/login'
@@ -474,7 +487,7 @@ class DashboardHandler {
     if (!btn) return
 
     btn.disabled = isLoading
-    btn.innerHTML = isLoading 
+    btn.innerHTML = isLoading
       ? `<span class="spinner" style="width: 20px; height: 20px; border-width: 2px;"></span> ${text}`
       : text
   }
