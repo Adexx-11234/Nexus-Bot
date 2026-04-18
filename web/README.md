@@ -436,8 +436,8 @@ Response:
     "phoneNumber": "+1234567890",
     "reconnectAttempts": 0,
     "uptime": 3600000,
-    "lastConnected": "2025-01-15T10:30:00Z",
-    "createdAt": "2025-01-15T09:30:00Z"
+    "lastConnected": "2026-01-15T10:30:00Z",
+    "createdAt": "2026-01-15T09:30:00Z"
   }
 }
 ```
@@ -461,8 +461,8 @@ Response:
     "connectionStatus": "connected",
     "sessionId": "session_9000000001",
     "source": "web",
-    "createdAt": "2025-01-15T09:00:00Z",
-    "updatedAt": "2025-01-15T10:00:00Z"
+    "createdAt": "2026-01-15T09:00:00Z",
+    "updatedAt": "2026-01-15T10:00:00Z"
   }
 }
 ```
@@ -581,8 +581,8 @@ updated_at     | TIMESTAMP    | Last password change
   reconnectAttempts: 0,
   source: "web",
   detected: true,
-  createdAt: ISODate("2025-01-15T09:00:00Z"),
-  updatedAt: ISODate("2025-01-15T10:00:00Z")
+  createdAt: ISODate("2026-01-15T09:00:00Z"),
+  updatedAt: ISODate("2026-01-15T10:00:00Z")
 }
 ```
 
@@ -592,7 +592,7 @@ updated_at     | TIMESTAMP    | Last password change
   filename: "creds.json",
   sessionId: "session_9000000001",
   datajson: "{ encrypted auth data }",
-  updatedAt: ISODate("2025-01-15T10:00:00Z")
+  updatedAt: ISODate("2026-01-15T10:00:00Z")
 }
 ```
 
@@ -947,4 +947,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ by the Development Team**
 
-*Last updated: January 2025*
+*Last updated: January 2026*

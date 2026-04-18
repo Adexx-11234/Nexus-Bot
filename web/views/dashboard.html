@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard - 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙 Manager</title>
-   <link rel="stylesheet" href="/css/style.css">
-   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/css/intlTelInput.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/css/intlTelInput.css">
+
 <body>
   <!-- Background effects -->
   <div class="bg-blob bg-blob-1"></div>
@@ -16,7 +18,8 @@
     <div class="header-content">
       <div class="logo">
         <div class="logo-icon">
-          <img src="/images/bot-logo.png" alt="Nexus Bot" style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
+          <img src="/images/bot-logo.png" alt="Nexus Bot"
+            style="width: 32px; height: 32px; border-radius: 8px; object-fit: cover;">
         </div>
         <span>𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙</span>
       </div>
@@ -68,15 +71,11 @@
         </p>
         <div class="form-group floating-label-group has-iti">
           <div class="input-wrapper">
-            <input 
-              type="tel" 
-              id="connect-phone" 
-              class="form-input" 
-              placeholder=" "
-            >
+            <input type="tel" id="connect-phone" class="form-input" placeholder=" ">
             <label for="connect-phone" class="floating-label">Phone Number</label>
           </div>
-          <small style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 6px; display: block; padding-left: 4px;">
+          <small
+            style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 6px; display: block; padding-left: 4px;">
             Select your country flag to automatically format the number
           </small>
         </div>
@@ -119,14 +118,16 @@
       </div>
 
       <!-- Reconnect Attempts Card -->
-      <div class="stat-card animate-on-scroll" style="background: linear-gradient(135deg, #F59E0B, #D97706); animation-delay: 0.1s;">
+      <div class="stat-card animate-on-scroll"
+        style="background: linear-gradient(135deg, #F59E0B, #D97706); animation-delay: 0.1s;">
         <div class="stat-label">Reconnect Attempts</div>
         <div class="stat-value" id="stat-attempts">0</div>
         <div class="stat-change">Failed reconnections</div>
       </div>
 
       <!-- Status Card -->
-      <div class="stat-card animate-on-scroll" style="background: linear-gradient(135deg, #3B82F6, #2563EB); animation-delay: 0.2s;">
+      <div class="stat-card animate-on-scroll"
+        style="background: linear-gradient(135deg, #3B82F6, #2563EB); animation-delay: 0.2s;">
         <div class="stat-label">Connection Status</div>
         <div class="stat-value" id="stat-status" style="font-size: 1.5rem; text-transform: capitalize;">
           disconnected
@@ -143,31 +144,43 @@
       <div class="card-body">
         <div style="display: flex; flex-direction: column; gap: 16px;">
           <div style="display: flex; gap: 16px; align-items: flex-start;">
-            <div style="padding: 6px 12px; background: rgba(79,70,229,0.1); color: var(--primary); border-radius: 8px; font-weight: 700;">1</div>
+            <div
+              style="padding: 6px 12px; background: rgba(79,70,229,0.1); color: var(--primary); border-radius: 8px; font-weight: 700;">
+              1</div>
             <div>
               <div style="font-weight: 600; margin-bottom: 4px;">Request Pairing Code</div>
-              <div style="color: var(--text-secondary); font-size: 0.95rem;">Enter your WhatsApp phone number and click Connect to generate a secure code.</div>
+              <div style="color: var(--text-secondary); font-size: 0.95rem;">Enter your WhatsApp phone number and click
+                Connect to generate a secure code.</div>
             </div>
           </div>
           <div style="display: flex; gap: 16px; align-items: flex-start;">
-            <div style="padding: 6px 12px; background: rgba(79,70,229,0.1); color: var(--primary); border-radius: 8px; font-weight: 700;">2</div>
+            <div
+              style="padding: 6px 12px; background: rgba(79,70,229,0.1); color: var(--primary); border-radius: 8px; font-weight: 700;">
+              2</div>
             <div>
               <div style="font-weight: 600; margin-bottom: 4px;">Open WhatsApp on Mobile</div>
-              <div style="color: var(--text-secondary); font-size: 0.95rem;">Tap Settings (or ⋮) → <b style="opacity:0.8;">Linked Devices</b> → <b style="opacity:0.8;">Link a Device</b></div>
+              <div style="color: var(--text-secondary); font-size: 0.95rem;">Tap Settings (or ⋮) → <b
+                  style="opacity:0.8;">Linked Devices</b> → <b style="opacity:0.8;">Link a Device</b></div>
             </div>
           </div>
           <div style="display: flex; gap: 16px; align-items: flex-start;">
-            <div style="padding: 6px 12px; background: rgba(79,70,229,0.1); color: var(--primary); border-radius: 8px; font-weight: 700;">3</div>
+            <div
+              style="padding: 6px 12px; background: rgba(79,70,229,0.1); color: var(--primary); border-radius: 8px; font-weight: 700;">
+              3</div>
             <div>
               <div style="font-weight: 600; margin-bottom: 4px;">Link via Phone Number</div>
-              <div style="color: var(--text-secondary); font-size: 0.95rem;">Instead of scanning a QR code, tap <b style="opacity:0.8;">"Link with phone number instead"</b></div>
+              <div style="color: var(--text-secondary); font-size: 0.95rem;">Instead of scanning a QR code, tap <b
+                  style="opacity:0.8;">"Link with phone number instead"</b></div>
             </div>
           </div>
-           <div style="display: flex; gap: 16px; align-items: flex-start;">
-            <div style="padding: 6px 12px; background: rgba(16,185,129,0.1); color: var(--success); border-radius: 8px; font-weight: 700;">4</div>
+          <div style="display: flex; gap: 16px; align-items: flex-start;">
+            <div
+              style="padding: 6px 12px; background: rgba(16,185,129,0.1); color: var(--success); border-radius: 8px; font-weight: 700;">
+              4</div>
             <div>
               <div style="font-weight: 600; margin-bottom: 4px;">Enter the 8-Digit Code</div>
-              <div style="color: var(--text-secondary); font-size: 0.95rem;">Input the code provided on this dashboard. Your session will finalize!</div>
+              <div style="color: var(--text-secondary); font-size: 0.95rem;">Input the code provided on this dashboard.
+                Your session will finalize!</div>
             </div>
           </div>
         </div>
@@ -176,7 +189,7 @@
 
     <!-- Footer -->
     <div style="text-align: center; padding: 40px 0; color: var(--text-secondary);" class="animate-on-scroll">
-      <p>© 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙 2025</p>
+      <p>© 𝕹𝖊𝖝𝖚𝖘 𝕭𝖔𝖙 2026</p>
       <p style="font-size: 0.875rem; margin-top: 8px;">
         Secure WhatsApp session management
       </p>
@@ -187,4 +200,5 @@
   <script src="../js/theme.js"></script>
   <script src="../js/dashboard.js"></script>
 </body>
+
 </html>
