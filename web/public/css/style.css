@@ -950,6 +950,11 @@ html {
 
 @media (max-width: 768px) {
 
+  .bg-blob {
+    display: none;
+    /* blobs cause repaint on viewport resize */
+  }
+
   body {
     background-attachment: scroll;
     /* fixes white flash on keyboard dismiss */
@@ -1031,7 +1036,7 @@ html {
     gap: 8px;
   }
 
-  .header-actions>div {
+  .header-user-info {
     display: none;
   }
 

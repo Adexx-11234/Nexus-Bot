@@ -48,6 +48,21 @@ class DashboardHandler {
       dropdownContainer: document.body  // ← KEY FIX: renders dropdown in body, escapes all stacking contexts
     })
 
+    // Keep keyboard open when opening country dropdown
+    const flagContainer = phoneInput.closest('.iti').querySelector('.iti__flag-container')
+    if (flagContainer) {
+      flagContainer.addEventListener('mousedown', (e) => {
+        e.preventDefault() // prevents input blur which dismisses keyboard
+      })
+      flagContainer.addEventListener('touchstart', (e) => {
+        e.preventDefault()
+        phoneInput.focus() // re-focus keeps keyboard up
+        // manually trigger dropdown
+        const flagBtn = flagContainer.querySelector('.iti__selected-flag')
+        if (flagBtn) flagBtn.click()
+      }, { passive: false })
+    }
+
     // Position dropdown directly below input on open
     phoneInput.addEventListener('open:countrydropdown', () => {
       const dropdown = document.querySelector('.iti__dropdown-content') || document.querySelector('.iti__country-list')

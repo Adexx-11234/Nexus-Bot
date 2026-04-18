@@ -12,17 +12,41 @@ class AuthHandler {
   }
 
   setupIntlTelInput() {
-    const phoneInput = document.getElementById('phone-number') // or 'connect-phone' in dashboard
-    if (!phoneInput || !window.intlTelInput) return
+    if (!window.intlTelInput) {
+      setTimeout(() => this.setupIntlTelInput(), 300)
+      return
+    }
+
+    const phoneInput = document.getElementById('phone-number')
+    if (!phoneInput) return
+
+    if (this.iti) {
+      this.iti.destroy()
+      this.iti = null
+    }
 
     this.iti = window.intlTelInput(phoneInput, {
       initialCountry: 'ng',
       separateDialCode: true,
       utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
-      dropdownContainer: document.body  // ← KEY FIX: renders dropdown in body, escapes all stacking contexts
+      dropdownContainer: document.body
     })
 
-    // Position dropdown directly below input on open
+    // Keep keyboard open when opening country dropdown on mobile
+    const flagContainer = phoneInput.closest('.iti').querySelector('.iti__flag-container')
+    if (flagContainer) {
+      flagContainer.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+      })
+      flagContainer.addEventListener('touchstart', (e) => {
+        e.preventDefault()
+        phoneInput.focus()
+        const flagBtn = flagContainer.querySelector('.iti__selected-flag')
+        if (flagBtn) flagBtn.click()
+      }, { passive: false })
+    }
+
+    // Position dropdown below input
     phoneInput.addEventListener('open:countrydropdown', () => {
       const dropdown = document.querySelector('.iti__dropdown-content') || document.querySelector('.iti__country-list')
       if (!dropdown) return
