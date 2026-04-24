@@ -28,7 +28,8 @@ class AuthHandler {
     this.iti = window.intlTelInput(phoneInput, {
       initialCountry: 'ng',
       separateDialCode: true,
-      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js'
+      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
+      dropdownContainer: document.body
     })
   }
 
