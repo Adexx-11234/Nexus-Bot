@@ -20,38 +20,13 @@ class DashboardHandler {
     const phoneInput = document.getElementById('connect-phone') // or 'connect-phone' in dashboard
     if (!phoneInput || !window.intlTelInput) return
 
-    // Destroy existing instance if any
-    if (this.iti) {
-      this.iti.destroy()
-      this.iti = null
-    }
+    // Prevent re-initialization which causes keyboard to close on mobile
+    if (this.iti) return
 
     this.iti = window.intlTelInput(phoneInput, {
       initialCountry: 'ng',
       separateDialCode: true,
-      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js',
-      dropdownContainer: document.body  // ← KEY FIX: renders dropdown in body, escapes all stacking contexts
-    })
-
-    // Position dropdown directly below input on open
-    phoneInput.addEventListener('open:countrydropdown', () => {
-      const dropdown = document.querySelector('.iti__dropdown-content') || document.querySelector('.iti__country-list')
-      if (!dropdown) return
-      const rect = phoneInput.getBoundingClientRect()
-      dropdown.style.position = 'fixed'
-      dropdown.style.top = (rect.bottom + 4) + 'px'
-
-      if (window.innerWidth <= 768) {
-        // Mobile: full width with padding
-        dropdown.style.left = '24px'
-        dropdown.style.width = 'calc(100vw - 48px)'
-      } else {
-        // Desktop: match input width, align to input left
-        dropdown.style.left = rect.left + 'px'
-        dropdown.style.width = rect.width + 'px'
-      }
-
-      dropdown.style.zIndex = '99999'
+      utilsScript: 'https://cdn.jsdelivr.net/npm/intl-tel-input@18.2.1/build/js/utils.js'
     })
   }
 

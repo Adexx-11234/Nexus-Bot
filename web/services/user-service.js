@@ -51,8 +51,11 @@ export class UserService {
 
     } catch (error) {
       await client.query('ROLLBACK')
-      logger.error('Create web user error:', error)
-      return null
+      logger.error('Create web user error:', error.message)
+      logger.error('Create web user error detail:', error.detail || 'none')
+      logger.error('Create web user error code:', error.code || 'none')
+      // Propagate actual error message for better debugging
+      throw error
     } finally {
       client.release()
     }
@@ -299,16 +302,20 @@ async getUserByPhone(phoneNumber) {
       }
 
       // Verify it doesn't exist (collision check)
-      const existsCheck = await this.pool.query(`
-        SELECT telegram_id FROM users WHERE telegram_id = $1
-      `, [nextId])
+      while (true) {
+        const existsCheck = await this.pool.query(`
+          SELECT 1 FROM users WHERE telegram_id = $1
+        `, [nextId.toString()])
 
-      if (existsCheck.rows.length > 0) {
+        if (existsCheck.rows.length === 0) {
+          break; // Found an available ID
+        }
+        
         // If collision, try next number
-        return await this._generateWebUserId()
+        nextId++;
       }
 
-      return nextId
+      return nextId.toString()
 
     } catch (error) {
       logger.error('Generate web user ID error:', error)

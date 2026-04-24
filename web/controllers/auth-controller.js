@@ -29,11 +29,26 @@ export class AuthController {
       const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
 
       // Create user
-      const user = await this.userService.createWebUser({
-        phoneNumber: cleanPhone,
-        passwordHash,
-        firstName
-      })
+      let user
+      try {
+        user = await this.userService.createWebUser({
+          phoneNumber: cleanPhone,
+          passwordHash,
+          firstName
+        })
+      } catch (dbError) {
+        logger.error(`Registration DB error: ${dbError.message}`)
+        logger.error(`DB error code: ${dbError.code}, detail: ${dbError.detail}`)
+        
+        // Check for common DB errors
+        if (dbError.code === '42P01') {
+          return { success: false, error: 'Database table missing. Please run migrations.' }
+        }
+        if (dbError.code === '23505') {
+          return { success: false, error: 'User with this phone number already exists' }
+        }
+        return { success: false, error: `Registration failed: ${dbError.message}` }
+      }
 
       if (!user) {
         return { success: false, error: 'Failed to create user' }

@@ -953,7 +953,12 @@ body {
 }
 
 @media (max-width: 480px) {
-  .header-user-info {
+  .header-user-info div {
+    max-width: 90px;
+  }
+  
+  /* Hide the text part of the logo to make room for user info on very small screens */
+  .logo span {
     display: none;
   }
 }
